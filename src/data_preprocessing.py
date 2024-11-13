@@ -130,3 +130,5 @@ def save_labeled_transcript_with_topic(labeled_transcript, raw_transcript, folde
         json.dump(labeled_transcript, f, indent=4, ensure_ascii=False)
     
     print(f"Labeled transcript saved to {file_path}")
+    
+    return filename  # Return the filename to be used in main.py

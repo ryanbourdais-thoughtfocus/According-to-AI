@@ -2,3 +2,5 @@
 .pyenv/
 src/__pycache__/
 .env
+analysis_report/
+cleaned_text/
