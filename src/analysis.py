@@ -70,7 +70,7 @@ def generate_analysis_report(conversation):
         "Speaker Interactions": speaker_interaction_analysis(conversation),
         "Call Structure": analyze_conversation("How was the call structured?", conversation),
         "Pitch or Sell": analyze_conversation("Did we have to pitch or sell? If so, what did we say?", conversation),
-        "Call Purpose": analyze_conversation("How would you summarize the call's purpose?", conversation),
+        "Call Purpose": analyze_conversation("How would you summarize the call?", conversation),
         "Customer Feedback": analyze_conversation("What did the customer tell us on this call?", conversation),
         "Our Response": analyze_conversation("How did we respond to the customer?", conversation),
         "Pitched and Received": analyze_conversation("What was pitched and how was it received?", conversation),
