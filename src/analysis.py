@@ -2,11 +2,11 @@ import os
 import json
 from langchain_openai import ChatOpenAI
 
-llm = ChatOpenAI(openai_api_key=os.getenv("OPENAI_API_KEY"), model_name="gpt-3.5-turbo", max_tokens=300)
+llm = ChatOpenAI(api_key=os.getenv("OPENAI_API_KEY"), model_name="gpt-3.5-turbo", max_tokens=300)
 
 def analyze_conversation(question, conversation):
     prompt = f"""
-    You are analyzing a customer service call conversation. Below is the conversation in JSON format. Based on this, please answer the following question:
+    You are analyzing a multi-speaker meeting transcript. Below is the conversation in JSON format. Based on this, please answer the following question:
 
     Conversation: {conversation}
 
@@ -16,58 +16,85 @@ def analyze_conversation(question, conversation):
     response = llm.invoke(prompt)
     return response.content.strip()
 
-def call_structure(conversation):
-    return analyze_conversation("How was the call structured?", conversation)
+def analyze_speaker_contributions(conversation):
+    """Analyze each speaker's contributions in the conversation."""
+    speakers = {entry["speaker"] for entry in conversation}  # Identify unique speakers
+    contributions = {}
+    for speaker in speakers:
+        speaker_convo = [entry["text"] for entry in conversation if entry["speaker"] == speaker]
+        prompt = f"Analyze the contributions made by {speaker} in the following statements:\n{speaker_convo}\nProvide insights on tone, engagement, and main points covered."
+        response = llm.invoke(prompt)
+        contributions[speaker] = response.content.strip()
+    return contributions
 
-def call_pitch(conversation):
-    return analyze_conversation("Did we have to pitch or sell? If so, what did we say?", conversation)
+def speaker_interaction_analysis(conversation):
+    """Analyze interactions between speakers, such as agreements, disagreements, or direct responses."""
+    prompt = f"""
+    You are analyzing the interactions in a multi-speaker conversation. Identify moments of agreement, disagreement, or direct responses between participants.
+    
+    Conversation: {conversation}
+    
+    Provide interaction insights as a JSON list where each entry has the format:
+    {{
+        "speaker_1": "Name",
+        "speaker_2": "Name",
+        "interaction": "Type of interaction (e.g., agreement, disagreement, response)",
+        "context": "Brief context of interaction"
+    }}
+    """
+    response = llm.invoke(prompt)
+    try:
+        interactions = json.loads(response.content.strip())
+    except json.JSONDecodeError:
+        print("Error: Could not parse interaction analysis as JSON.")
+        interactions = []
+    return interactions
 
-def call_summary(conversation):
-    return analyze_conversation("How would you summarize the call's purpose?", conversation)
+def overall_meeting_summary(conversation):
+    """Generate a high-level summary of the meeting, including main topics, outcomes, and sentiment."""
+    prompt = f"""
+    Provide a high-level summary of this multi-speaker meeting, focusing on the main topics, outcomes, and overall sentiment. Include whether any decisions or consensus were reached.
+    
+    Conversation: {conversation}
+    
+    Summary:
+    """
+    response = llm.invoke(prompt)
+    return response.content.strip()
 
-def customer_feedback(conversation):
-    return analyze_conversation("What did the customer tell us on this call?", conversation)
-
-def our_response(conversation):
-    return analyze_conversation("How did we respond to the customer?", conversation)
-
-def pitched_response(conversation):
-    return analyze_conversation("What was pitched and how was it received?", conversation)
-
-def customer_sentiment(conversation):
-    return analyze_conversation("What was the general customer sentiment?", conversation)
-
-def negative_sentiment(conversation):
-    return analyze_conversation("If there is negative customer sentiment, what caused it?", conversation)
-
-def action_items(conversation):
-    return analyze_conversation("What are action items, next steps, and results from the call?", conversation)
-
-def missed_opportunities(conversation):
-    return analyze_conversation("Did we miss opportunities to sell, move faster, or service the customer better?", conversation)
-
-def language_barrier(conversation):
-    return analyze_conversation("Was there any language barrier?", conversation)
-
-def crm_updates(conversation):
-    return analyze_conversation("What are CRM/deal relevant updates?", conversation)
-
-def cust_interest(conversation):
-    return analyze_conversation("On a scale of 1 to 10 how interested in the product?", conversation)
+def generate_analysis_report(conversation):
+    """Generate a comprehensive report for a multi-speaker meeting."""
+    report = {
+        "Overall Meeting Summary": overall_meeting_summary(conversation),
+        "Speaker Contributions": analyze_speaker_contributions(conversation),
+        "Speaker Interactions": speaker_interaction_analysis(conversation),
+        "Call Structure": analyze_conversation("How was the call structured?", conversation),
+        "Pitch or Sell": analyze_conversation("Did we have to pitch or sell? If so, what did we say?", conversation),
+        "Call Purpose": analyze_conversation("How would you summarize the call's purpose?", conversation),
+        "Customer Feedback": analyze_conversation("What did the customer tell us on this call?", conversation),
+        "Our Response": analyze_conversation("How did we respond to the customer?", conversation),
+        "Pitched and Received": analyze_conversation("What was pitched and how was it received?", conversation),
+        "Customer Sentiment": analyze_conversation("What was the general customer sentiment?", conversation),
+        "Negative Sentiment": analyze_conversation("If there is negative customer sentiment, what caused it?", conversation),
+        "Action Items": analyze_conversation("What are action items, next steps, and results from the call?", conversation),
+        "Missed Opportunities": analyze_conversation("Did we miss opportunities to sell, move faster, or service the customer better?", conversation),
+        "Language Barrier": analyze_conversation("Was there any language barrier?", conversation),
+        "CRM/Deal Updates": analyze_conversation("What are CRM/deal relevant updates?", conversation),
+        "Customer Interest": analyze_conversation("On a scale of 1 to 10 how interested in the product?", conversation),
+        "Sales Pitch Rating": rate_sales_pitch(conversation)
+    }
+    return report
 
 def rate_sales_pitch(conversation):
     """Rates the employee's sales pitch on a scale of 1 to 10 based on clarity, relevance, persuasiveness, and responsiveness."""
     
     prompt = f"""
-    You are analyzing a customer service call in which an employee pitched a product to a client. Based on the conversation below, rate the employee's sales pitch on a scale of 1 to 10 for each of the following criteria, and provide a brief explanation for each score. Respond strictly in JSON format.
+    Rate the sales pitch by employees on a scale of 1 to 10 based on clarity, relevance, persuasiveness, and responsiveness. Provide a JSON with scores and brief explanations.
 
-    Criteria:
-    1. Clarity: How clearly did the employee explain the product and its benefits?
-    2. Relevance: How relevant was the pitch to the customer's needs and concerns?
-    3. Persuasiveness: How effectively did the employee communicate the value of the product?
-    4. Responsiveness: How well did the employee handle the customer's objections or questions?
-
-    Format your response strictly as follows, without any extra text:
+    Conversation:
+    {conversation}
+    
+    Format:
     {{
         "clarity": {{"score": "<score>/10", "explanation": "<Explanation>"}},
         "relevance": {{"score": "<score>/10", "explanation": "<Explanation>"}},
@@ -75,37 +102,13 @@ def rate_sales_pitch(conversation):
         "responsiveness": {{"score": "<score>/10", "explanation": "<Explanation>"}},
         "overall": {{"score": "<overall score>/10", "explanation": "<Explanation>"}}
     }}
-
-    Conversation:
-    {conversation}
     """
     
     response = llm.invoke(prompt)
-    rating = response.content.strip()
-    
     try:
-        rating_data = json.loads(rating)
+        rating_data = json.loads(response.content.strip())
     except json.JSONDecodeError:
-        print("Error: Could not parse model response as JSON. Fallback to manual extraction.")
+        print("Error: Could not parse rating response as JSON.")
         rating_data = {"error": "Failed to parse response"}
     
     return rating_data
-
-def generate_analysis_report(conversation):
-    report = {
-        "Call Structure": call_structure(conversation),
-        "Pitch or Sell": call_pitch(conversation),
-        "Call Purpose": call_summary(conversation),
-        "Customer Feedback": customer_feedback(conversation),
-        "Our Response": our_response(conversation),
-        "Pitched and Received": pitched_response(conversation),
-        "Customer Sentiment": customer_sentiment(conversation),
-        "Negative Sentiment": negative_sentiment(conversation),
-        "Action Items": action_items(conversation),
-        "Missed Opportunities": missed_opportunities(conversation),
-        "Language Barrier": language_barrier(conversation),
-        "CRM/Deal Updates": crm_updates(conversation),
-        "Customer Interest": cust_interest(conversation),
-        "Sales Pitch Rating": rate_sales_pitch(conversation)
-    }
-    return report
