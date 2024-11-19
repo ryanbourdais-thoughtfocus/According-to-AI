@@ -1,6 +1,6 @@
-import azure.functions as func
 import logging
 import os
+import azure.functions as func
 import azure.cognitiveservices.speech as speechsdk
 import tempfile
 import subprocess
@@ -39,23 +39,24 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
     audio_config = speechsdk.AudioConfig(filename=temp_audio_path)
 
-    # Perform speech-to-text transcription
-    try:
-        speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
-        result = speech_recognizer.recognize_once()
-    except Exception as e:
-        logging.error(f"Error during speech recognition: {str(e)}")
-        return func.HttpResponse(f"Error during speech recognition: {str(e)}", status_code=500)
+    # Set up the speech recognizer for continuous recognition
+    speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
 
-    # Return the transcript
-    if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-        response = {
-            "transcript": result.text
-        }
-        return func.HttpResponse(body=str(response), status_code=200)
-    else:
-        error_response = {
-            "error": result.reason,
-            "details": result.no_match_details or "No match"
-        }
-        return func.HttpResponse(body=str(error_response), status_code=500)
+    # Collect the full transcript
+    all_transcripts = []
+
+    def handle_recognized(evt):
+        all_transcripts.append(evt.result.text)
+
+    # Connect the event handler
+    speech_recognizer.recognized.connect(handle_recognized)
+
+    # Start continuous recognition
+    speech_recognizer.start_continuous_recognition()
+    logging.info("Recognition started. Waiting for completion...")
+
+    # Wait until recognition is done
+    speech_recognizer.recognize_once_async().get()
+
+    # Stop recognition
+    speech_recognizer.stop()
