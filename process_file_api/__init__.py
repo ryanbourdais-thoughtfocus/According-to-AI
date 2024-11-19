@@ -7,8 +7,8 @@ import subprocess
 import json
 import uuid
 import sys
-import time
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Python HTTP trigger function processed a request.")
@@ -40,27 +40,22 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info(f"Full ffmpeg command: {' '.join(ffmpeg_command)}")
 
     try:
-        start_time = time.time()
         logging.info("Starting ffmpeg command...")
         subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
-        logging.info(f"Audio track converted to WAV format in {time.time() - start_time:.2f} seconds.")
+        logging.info("Audio track converted to WAV format.")
     except subprocess.CalledProcessError as e:
         logging.error(f"Error while converting video to audio: {e.stderr}")
         return func.HttpResponse(f"Error while converting video to audio: {e.stderr}", status_code=500)
-    except Exception as e:
-        logging.error(f"Unexpected error: {str(e)}")
-        return func.HttpResponse(f"Unexpected error: {str(e)}", status_code=500)
 
     # Split the audio file into chunks using ffmpeg
     chunk_dir = tempfile.mkdtemp()  # Directory to store audio chunks
     chunk_prefix = os.path.join(chunk_dir, "chunk")
     try:
-        start_time = time.time()
         subprocess.run([
             "ffmpeg", "-i", temp_audio_path, "-f", "segment", "-segment_time", "60",
             "-c", "copy", f"{chunk_prefix}%03d.wav"
         ], check=True)
-        logging.info(f"Audio split into chunks in {time.time() - start_time:.2f} seconds.")
+        logging.info("Audio split into chunks.")
     except subprocess.CalledProcessError as e:
         logging.error(f"Error while splitting audio into chunks: {e.stderr}")
         return func.HttpResponse(f"Error while splitting audio into chunks: {e.stderr}", status_code=500)
@@ -91,11 +86,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         sys.stdout.write(f"|Total:   {total_progress:.1f}%|\n")
         sys.stdout.flush()
 
-    # Process each chunk
-    for index, chunk_file in enumerate(chunk_files):
+    # Function to process each audio chunk with continuous recognition
+    def process_chunk(index, chunk_file):
         chunk_path = os.path.join(chunk_dir, chunk_file)
         audio_config = speechsdk.AudioConfig(filename=chunk_path)
         speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+
+        # Synchronization event to wait for recognition
+        done = threading.Event()
 
         # Handle recognized speech
         def handle_recognized(evt):
@@ -105,24 +103,37 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             elif evt.result.reason == speechsdk.ResultReason.NoMatch:
                 logging.warning("No speech recognized.")
 
-        # Connect event handler
+        # Handle session stopped and canceled events
+        def handle_session_stopped(evt):
+            logging.info("Session stopped.")
+            done.set()  # Signal that the session has stopped
+
+        def handle_canceled(evt):
+            logging.error(f"Recognition canceled: {evt.reason}")
+            done.set()  # Signal that recognition is done
+
+        # Connect event handlers
         speech_recognizer.recognized.connect(handle_recognized)
+        speech_recognizer.session_stopped.connect(handle_session_stopped)
+        speech_recognizer.canceled.connect(handle_canceled)
 
-        # Recognize speech in the chunk
+        # Start continuous recognition
         logging.info(f"Processing chunk {index + 1}/{total_chunks}: {chunk_file}")
-        start_time = time.time()
         speech_recognizer.start_continuous_recognition()
-
-        # Wait for a reasonable amount of time to ensure the chunk is processed
-        time.sleep(60)  # Adjust the sleep time as needed
+        done.wait()  # Wait for the session to stop
         speech_recognizer.stop_continuous_recognition()
 
-        processing_time = time.time() - start_time
-        logging.info(f"Chunk {index + 1} processed in {processing_time:.2f} seconds.")
-
-        # Update progress
         chunk_progress[index] = 100  # Mark this chunk as complete
-        update_progress_table()  # Display the updated progress table
+        update_progress_table()
+
+    # Use ThreadPoolExecutor to process chunks in parallel
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_chunk, index, chunk_file) for index, chunk_file in enumerate(chunk_files)]
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                logging.error(f"Error processing chunk: {str(e)}")
 
     # Return the results as a JSON response
     response_data = {
