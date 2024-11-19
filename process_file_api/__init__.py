@@ -5,6 +5,7 @@ import azure.cognitiveservices.speech as speechsdk
 import tempfile
 import subprocess
 import sys
+import time
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Python HTTP trigger function processed a request.")
@@ -22,6 +23,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     temp_file_path = os.path.join(tempfile.gettempdir(), file.filename)
     with open(temp_file_path, "wb") as temp_file:
         temp_file.write(file.read())
+    logging.info("File saved to temporary location.")
 
     # Check if ffmpeg has Nvidia GPU hardware acceleration support
     try:
@@ -41,6 +43,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     # Convert the video file to audio using ffmpeg with GPU acceleration if available
     temp_audio_path = os.path.join(tempfile.gettempdir(), "audio.wav")
     try:
+        start_time = time.time()
         if ffmpeg_supports_cuda:
             logging.info("Using Nvidia GPU hardware acceleration for ffmpeg.")
             subprocess.run([
@@ -53,6 +56,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 "ffmpeg", "-i", temp_file_path, "-vn",
                 "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2", temp_audio_path
             ], check=True)
+        logging.info(f"Audio extraction completed in {time.time() - start_time:.2f} seconds.")
     except Exception as e:
         logging.error(f"Error while converting video to audio: {str(e)}")
         return func.HttpResponse(f"Error while converting video to audio: {str(e)}", status_code=500)
@@ -61,9 +65,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     chunk_dir = tempfile.mkdtemp()  # Create a temporary directory for chunks
     chunk_prefix = os.path.join(chunk_dir, "chunk")
     try:
+        start_time = time.time()
         subprocess.run([
             "ffmpeg", "-i", temp_audio_path, "-f", "segment", "-segment_time", "60", "-c", "copy", f"{chunk_prefix}%03d.wav"
         ], check=True)
+        logging.info(f"Audio splitting completed in {time.time() - start_time:.2f} seconds.")
     except Exception as e:
         logging.error(f"Error while splitting audio into chunks: {str(e)}")
         return func.HttpResponse(f"Error while splitting audio into chunks: {str(e)}", status_code=500)
@@ -101,7 +107,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
         # Update and display progress
         logging.info(f"Processing chunk {index + 1}/{total_chunks}: {chunk_file}")
+        start_time = time.time()
         result = speech_recognizer.recognize_once()
+        processing_time = time.time() - start_time
+        logging.info(f"Chunk {index + 1}/{total_chunks} processed in {processing_time:.2f} seconds.")
+
         if result.reason == speechsdk.ResultReason.RecognizedSpeech:
             all_transcripts.append(result.text)
             chunk_progress[index] = 100  # Mark this chunk as complete
