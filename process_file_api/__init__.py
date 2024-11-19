@@ -4,7 +4,7 @@ import azure.functions as func
 import azure.cognitiveservices.speech as speechsdk
 import tempfile
 import subprocess
-import sys
+import json
 import time
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
@@ -25,54 +25,30 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         temp_file.write(file.read())
     logging.info("File saved to temporary location.")
 
-    # Check if ffmpeg has Nvidia GPU hardware acceleration support
-    try:
-        result = subprocess.run(
-            ["ffmpeg", "-codecs"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=True
-        )
-        # Check if 'h264_nvenc' is in the output
-        ffmpeg_supports_cuda = "h264_nvenc" in result.stdout
-    except Exception as e:
-        logging.error(f"Error while checking ffmpeg codecs: {str(e)}")
-        ffmpeg_supports_cuda = False
-
-    # Convert the video file to audio using ffmpeg with GPU acceleration if available
+    # Convert the video file to compressed mono WAV using ffmpeg
     temp_audio_path = os.path.join(tempfile.gettempdir(), "audio.wav")
-    try:
-        start_time = time.time()
-        if ffmpeg_supports_cuda:
-            logging.info("Using Nvidia GPU hardware acceleration for ffmpeg.")
-            subprocess.run([
-                "ffmpeg", "-hwaccel", "cuda", "-i", temp_file_path, "-vn",
-                "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2", temp_audio_path
-            ], check=True)
-        else:
-            logging.info("Nvidia GPU hardware acceleration not available. Using CPU for ffmpeg.")
-            subprocess.run([
-                "ffmpeg", "-i", temp_file_path, "-vn",
-                "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2", temp_audio_path
-            ], check=True)
-        logging.info(f"Audio extraction completed in {time.time() - start_time:.2f} seconds.")
-    except Exception as e:
-        logging.error(f"Error while converting video to audio: {str(e)}")
-        return func.HttpResponse(f"Error while converting video to audio: {str(e)}", status_code=500)
+    ffmpeg_command = [
+        "ffmpeg", "-i", temp_file_path, "-vn",
+        "-acodec", "pcm_s16le", "-ar", "22050", "-ac", "1", temp_audio_path
+    ]
 
-    # Split the audio file into chunks using ffmpeg
-    chunk_dir = tempfile.mkdtemp()  # Create a temporary directory for chunks
-    chunk_prefix = os.path.join(chunk_dir, "chunk")
+    # Log the full ffmpeg command
+    logging.info(f"Full ffmpeg command: {' '.join(ffmpeg_command)}")
+
     try:
         start_time = time.time()
-        subprocess.run([
-            "ffmpeg", "-i", temp_audio_path, "-f", "segment", "-segment_time", "60", "-c", "copy", f"{chunk_prefix}%03d.wav"
-        ], check=True)
-        logging.info(f"Audio splitting completed in {time.time() - start_time:.2f} seconds.")
+        logging.info("Starting ffmpeg command...")
+
+        # Use subprocess.run to execute ffmpeg
+        subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
+
+        logging.info(f"Audio track converted to WAV format in {time.time() - start_time:.2f} seconds.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error while converting video to audio: {e.stderr}")
+        return func.HttpResponse(f"Error while converting video to audio: {e.stderr}", status_code=500)
     except Exception as e:
-        logging.error(f"Error while splitting audio into chunks: {str(e)}")
-        return func.HttpResponse(f"Error while splitting audio into chunks: {str(e)}", status_code=500)
+        logging.error(f"Unexpected error: {str(e)}")
+        return func.HttpResponse(f"Unexpected error: {str(e)}", status_code=500)
 
     # Initialize Azure Speech SDK
     speech_key = os.environ.get("SPEECH_KEY")
@@ -81,48 +57,39 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse("SPEECH_KEY and SERVICE_REGION environment variables are not set.", status_code=500)
 
     speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
-    all_transcripts = []
+    audio_config = speechsdk.AudioConfig(filename=temp_audio_path)
 
-    # Transcribe each audio chunk with progress logging
-    chunk_files = sorted(os.listdir(chunk_dir))
-    total_chunks = len(chunk_files)
-    chunk_progress = [0] * total_chunks  # Track progress for each chunk
+    # Enable continuous recognition and speaker diarization if supported
+    speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
 
-    # Function to update the progress table
-    def update_progress_table():
-        sys.stdout.write("\033[H\033[J")  # Clear the console
-        sys.stdout.write("|chunk|progress|\n")
-        for i, progress in enumerate(chunk_progress):
-            sys.stdout.write(f"|{i + 1:>5}|{progress:>8}%|\n")
-        sys.stdout.write("|--------------|\n")
-        total_progress = sum(chunk_progress) / total_chunks
-        sys.stdout.write(f"|Total:   {total_progress:.1f}%|\n")
-        sys.stdout.flush()
+    # List to store transcription results with speaker information
+    transcription_results = []
 
-    # Process and transcribe each chunk
-    for index, chunk_file in enumerate(chunk_files):
-        chunk_path = os.path.join(chunk_dir, chunk_file)
-        audio_config = speechsdk.AudioConfig(filename=chunk_path)
-        speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+    def handle_recognized(evt):
+        transcription_results.append({
+            "text": evt.result.text,
+            "speaker": evt.result.properties.get(
+                speechsdk.PropertyId.SpeechServiceResponse_SpeakerId, "Unknown"
+            )
+        })
+        logging.info(f"Recognized: {evt.result.text}")
 
-        # Update and display progress
-        logging.info(f"Processing chunk {index + 1}/{total_chunks}: {chunk_file}")
-        start_time = time.time()
-        result = speech_recognizer.recognize_once()
-        processing_time = time.time() - start_time
-        logging.info(f"Chunk {index + 1}/{total_chunks} processed in {processing_time:.2f} seconds.")
+    # Connect the event handler
+    speech_recognizer.recognized.connect(handle_recognized)
 
-        if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-            all_transcripts.append(result.text)
-            chunk_progress[index] = 100  # Mark this chunk as complete
-        else:
-            logging.warning(f"No speech recognized in chunk {index + 1}/{total_chunks} or an error occurred.")
-            chunk_progress[index] = 100  # Still mark as complete for progress
+    # Start continuous recognition
+    logging.info("Starting continuous recognition...")
+    speech_recognizer.start_continuous_recognition()
 
-        # Calculate and update the total progress
-        update_progress_table()
+    # Wait until the recognition is done (you might want to set a timeout)
+    time.sleep(10)  # Adjust the sleep time if needed for your use case
 
-    # Combine all transcripts into one
-    full_transcript = " ".join(all_transcripts)
-    logging.info("Transcription process complete.")
-    return func.HttpResponse(full_transcript, status_code=200)
+    # Stop recognition
+    speech_recognizer.stop_continuous_recognition()
+    logging.info("Continuous recognition stopped.")
+
+    # Return the results as a JSON response
+    response_data = {
+        "transcription": transcription_results
+    }
+    return func.HttpResponse(json.dumps(response_data), status_code=200, mimetype="application/json")
