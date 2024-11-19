@@ -5,6 +5,7 @@
 azure-functions
 torch  # Install PyTorch with CUDA if necessary (use the correct version as per your CUDA version)
 ffmpeg-python  # Python bindings for FFmpeg
+transformers
 
 # Whisper from the official GitHub repository
 git+https://github.com/openai/whisper.git
