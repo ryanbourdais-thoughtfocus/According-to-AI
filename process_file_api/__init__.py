@@ -76,19 +76,32 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
     all_transcripts = []
 
-    # Transcribe each audio chunk
-    for chunk_file in sorted(os.listdir(chunk_dir)):
+    # Transcribe each audio chunk with progress logging
+    chunk_files = sorted(os.listdir(chunk_dir))
+    total_chunks = len(chunk_files)
+    logging.info(f"Total number of chunks to process: {total_chunks}")
+
+    for index, chunk_file in enumerate(chunk_files):
         chunk_path = os.path.join(chunk_dir, chunk_file)
         audio_config = speechsdk.AudioConfig(filename=chunk_path)
         speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+
+        # Log progress for each chunk
+        logging.info(f"Processing chunk {index + 1}/{total_chunks}: {chunk_file}")
 
         # Perform the transcription for each chunk
         result = speech_recognizer.recognize_once()
         if result.reason == speechsdk.ResultReason.RecognizedSpeech:
             all_transcripts.append(result.text)
+            logging.info(f"Chunk {index + 1}/{total_chunks} transcription complete.")
         else:
-            logging.warning(f"No speech recognized in {chunk_file} or an error occurred.")
+            logging.warning(f"No speech recognized in chunk {index + 1}/{total_chunks} or an error occurred.")
+
+        # Log overall progress
+        progress_percentage = ((index + 1) / total_chunks) * 100
+        logging.info(f"Overall progress: {progress_percentage:.2f}%")
 
     # Combine all transcripts into one
     full_transcript = " ".join(all_transcripts)
+    logging.info("Transcription process complete.")
     return func.HttpResponse(full_transcript, status_code=200)
