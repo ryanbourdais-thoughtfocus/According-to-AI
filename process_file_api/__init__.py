@@ -4,6 +4,7 @@ import azure.functions as func
 import azure.cognitiveservices.speech as speechsdk
 import tempfile
 import subprocess
+import sys
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Python HTTP trigger function processed a request.")
@@ -79,27 +80,37 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     # Transcribe each audio chunk with progress logging
     chunk_files = sorted(os.listdir(chunk_dir))
     total_chunks = len(chunk_files)
-    logging.info(f"Total number of chunks to process: {total_chunks}")
+    chunk_progress = [0] * total_chunks  # Track progress for each chunk
 
+    # Function to update the progress table
+    def update_progress_table():
+        sys.stdout.write("\033[H\033[J")  # Clear the console
+        sys.stdout.write("|chunk|progress|\n")
+        for i, progress in enumerate(chunk_progress):
+            sys.stdout.write(f"|{i + 1:>5}|{progress:>8}%|\n")
+        sys.stdout.write("|--------------|\n")
+        total_progress = sum(chunk_progress) / total_chunks
+        sys.stdout.write(f"|Total:   {total_progress:.1f}%|\n")
+        sys.stdout.flush()
+
+    # Process and transcribe each chunk
     for index, chunk_file in enumerate(chunk_files):
         chunk_path = os.path.join(chunk_dir, chunk_file)
         audio_config = speechsdk.AudioConfig(filename=chunk_path)
         speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
 
-        # Log progress for each chunk
+        # Update and display progress
         logging.info(f"Processing chunk {index + 1}/{total_chunks}: {chunk_file}")
-
-        # Perform the transcription for each chunk
         result = speech_recognizer.recognize_once()
         if result.reason == speechsdk.ResultReason.RecognizedSpeech:
             all_transcripts.append(result.text)
-            logging.info(f"Chunk {index + 1}/{total_chunks} transcription complete.")
+            chunk_progress[index] = 100  # Mark this chunk as complete
         else:
             logging.warning(f"No speech recognized in chunk {index + 1}/{total_chunks} or an error occurred.")
+            chunk_progress[index] = 100  # Still mark as complete for progress
 
-        # Log overall progress
-        progress_percentage = ((index + 1) / total_chunks) * 100
-        logging.info(f"Overall progress: {progress_percentage:.2f}%")
+        # Calculate and update the total progress
+        update_progress_table()
 
     # Combine all transcripts into one
     full_transcript = " ".join(all_transcripts)
