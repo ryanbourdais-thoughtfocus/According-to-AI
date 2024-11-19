@@ -20,7 +20,7 @@ Before running the project, make sure you have the following installed:
 
 ## Installation
 
-1. 1. **Clone the Repository**:
+1. **Clone the Repository**:
    ```bash
    git clone --branch feature/ATA-35 https://github.com/ryanbourdais-thoughtfocus/According-to-AI.git
    cd According-to-AI
