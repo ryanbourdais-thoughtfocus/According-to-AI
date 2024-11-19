@@ -67,23 +67,50 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         )
 
         segments = result.get("segments", [])
-        transcription_results = []
+        dialog = []
 
-        # Process each segment to structure transcription
+        # Attempt to extract meeting details from the transcribed text (placeholder logic)
+        meeting_title = ""
+        meeting_date = ""
+        meeting_time = ""
+        meeting_location = ""
+        participants = []
+
+        # Loop through segments to build the dialog and extract details
         for segment in segments:
-            transcription_results.append({
-                "start": segment["start"],
-                "end": segment["end"],
-                "text": segment["text"]
+            text = segment["text"]
+            # Placeholder logic to extract speaker and sentiment
+            speaker = "Unknown Speaker"  # Replace this with actual logic if available
+            sentiment = "Neutral"  # Placeholder, replace with actual sentiment analysis logic
+
+            dialog.append({
+                "Speaker": speaker,
+                "Statement": text,
+                "Sentiment": sentiment
             })
-        
-        logging.info("Transcription completed.")
+
+        logging.info("Transcription and data extraction completed.")
     except Exception as e:
         logging.error(f"Error during transcription: {str(e)}")
         return func.HttpResponse(f"Error during transcription: {str(e)}", status_code=500)
 
-    # Return the transcription as a JSON response
+    # Construct the final JSON structure with placeholders for missing information
     response_data = {
-        "transcription": transcription_results
+        "Meeting": {
+            "Title": meeting_title or "Unknown Title",
+            "Date": meeting_date or "Unknown Date",
+            "Time": meeting_time or "Unknown Time",
+            "Location": meeting_location or "Unknown Location",
+            "Participants": participants or ["Unknown Participants"],
+            "Dialog": dialog,
+            "ClosingNote": "The meeting concludes. Details may need to be followed up.",
+            "PerformanceSummary": {
+                "OverallPerformance": "Unknown",
+                "Strengths": [],
+                "AreasForImprovement": [],
+                "ClientResponse": "No specific client response recorded."
+            }
+        }
     }
+
     return func.HttpResponse(json.dumps(response_data), status_code=200, mimetype="application/json")
