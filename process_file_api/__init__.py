@@ -51,14 +51,25 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     try:
         logging.info("Starting transcription with Whisper...")
         result = model.transcribe(temp_audio_path)
-        transcription_text = result["text"]
-        logging.info(f"Transcription completed: {transcription_text}")
+        segments = result.get("segments", [])
+        transcription_results = []
+
+        # Process each segment to structure transcription
+        for segment in segments:
+            transcription_results.append({
+                "start": segment["start"],
+                "end": segment["end"],
+                "text": segment["text"]
+                # Note: Whisper does not provide speaker labels, but you can add logic here for speaker diarization
+            })
+        
+        logging.info("Transcription completed.")
     except Exception as e:
         logging.error(f"Error during transcription: {str(e)}")
         return func.HttpResponse(f"Error during transcription: {str(e)}", status_code=500)
 
     # Return the transcription as a JSON response
     response_data = {
-        "transcription": [{"text": transcription_text}]
+        "transcription": transcription_results
     }
     return func.HttpResponse(json.dumps(response_data), status_code=200, mimetype="application/json")
