@@ -5,6 +5,8 @@ import azure.cognitiveservices.speech as speechsdk
 import tempfile
 import subprocess
 import json
+import uuid
+import threading
 import time
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
@@ -25,8 +27,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         temp_file.write(file.read())
     logging.info("File saved to temporary location.")
 
+    # Generate a unique file name for the audio output
+    unique_id = uuid.uuid4().hex  # Generate a unique identifier
+    temp_audio_path = os.path.join(tempfile.gettempdir(), f"audio_{unique_id}.wav")
+
     # Convert the video file to compressed mono WAV using ffmpeg
-    temp_audio_path = os.path.join(tempfile.gettempdir(), "audio.wav")
     ffmpeg_command = [
         "ffmpeg", "-i", temp_file_path, "-vn",
         "-acodec", "pcm_s16le", "-ar", "22050", "-ac", "1", temp_audio_path
@@ -59,11 +64,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
     audio_config = speechsdk.AudioConfig(filename=temp_audio_path)
 
-    # Enable continuous recognition and speaker diarization if supported
-    speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
-
-    # List to store transcription results with speaker information
+    # List to store transcription results
     transcription_results = []
+
+    # Event to signal when recognition is done
+    done = threading.Event()
 
     def handle_recognized(evt):
         transcription_results.append({
@@ -74,15 +79,26 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         })
         logging.info(f"Recognized: {evt.result.text}")
 
-    # Connect the event handler
+    def handle_session_stopped(evt):
+        logging.info("Session stopped event received. Stopping recognition.")
+        done.set()
+
+    def handle_canceled(evt):
+        logging.error(f"Recognition canceled: {evt.reason}")
+        done.set()
+
+    # Create a speech recognizer and connect event handlers
+    speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
     speech_recognizer.recognized.connect(handle_recognized)
+    speech_recognizer.session_stopped.connect(handle_session_stopped)
+    speech_recognizer.canceled.connect(handle_canceled)
 
     # Start continuous recognition
     logging.info("Starting continuous recognition...")
     speech_recognizer.start_continuous_recognition()
 
-    # Wait until the recognition is done (you might want to set a timeout)
-    time.sleep(10)  # Adjust the sleep time if needed for your use case
+    # Wait until the recognition is done
+    done.wait()  # Wait for the session stopped or canceled event
 
     # Stop recognition
     speech_recognizer.stop_continuous_recognition()
