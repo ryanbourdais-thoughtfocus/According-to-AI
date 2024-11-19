@@ -1,33 +1,64 @@
-# Register this blueprint by adding the following line of code 
-# to your entry point file.  
-# app.register_functions(process_file_api) 
-# 
-# Please refer to https://aka.ms/azure-functions-python-blueprints
-
-
 import azure.functions as func
 import logging
+import os
+import azure.cognitiveservices.speech as speechsdk
+import tempfile
 
 process_file_api = func.Blueprint()
-
 
 @process_file_api.route(route="fileToTranscript", auth_level=func.AuthLevel.ANONYMOUS)
 def fileToTranscript(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
 
-    name = req.params.get('name')
-    if not name:
-        try:
-            req_body = req.get_json()
-        except ValueError:
-            pass
-        else:
-            name = req_body.get('name')
+    # Check if the request contains a file
+    try:
+        file = req.files.get('file')
+        if not file:
+            return func.HttpResponse("No file found in the request. Please upload a video file.", status_code=400)
+    except Exception as e:
+        logging.error(f"Error while reading the file from request: {str(e)}")
+        return func.HttpResponse(f"Error while reading the file from request: {str(e)}", status_code=500)
 
-    if name:
-        return func.HttpResponse(f"Hello, {name}. This HTTP triggered function executed successfully.")
+    # Save the uploaded file to a temporary location
+    temp_file_path = os.path.join(tempfile.gettempdir(), file.filename)
+    with open(temp_file_path, "wb") as temp_file:
+        temp_file.write(file.read())
+
+    # Convert the video file to audio using ffmpeg (ensure ffmpeg is installed on your system)
+    temp_audio_path = os.path.join(tempfile.gettempdir(), "audio.wav")
+    try:
+        import subprocess
+        subprocess.run(["ffmpeg", "-i", temp_file_path, "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2", temp_audio_path], check=True)
+    except Exception as e:
+        logging.error(f"Error while converting video to audio: {str(e)}")
+        return func.HttpResponse(f"Error while converting video to audio: {str(e)}", status_code=500)
+
+    # Initialize Azure Speech SDK
+    speech_key = os.environ.get("SPEECH_KEY")
+    service_region = os.environ.get("SERVICE_REGION")
+    if not speech_key or not service_region:
+        return func.HttpResponse("SPEECH_KEY and SERVICE_REGION environment variables are not set.", status_code=500)
+
+    speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
+    audio_config = speechsdk.AudioConfig(filename=temp_audio_path)
+
+    # Perform speech-to-text transcription
+    try:
+        speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+        result = speech_recognizer.recognize_once()
+    except Exception as e:
+        logging.error(f"Error during speech recognition: {str(e)}")
+        return func.HttpResponse(f"Error during speech recognition: {str(e)}", status_code=500)
+
+    # Return the transcript
+    if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+        response = {
+            "transcript": result.text
+        }
+        return func.HttpResponse(body=str(response), status_code=200)
     else:
-        return func.HttpResponse(
-             "This HTTP triggered function executed successfully. Pass a name in the query string or in the request body for a personalized response.",
-             status_code=200
-        )
+        error_response = {
+            "error": result.reason,
+            "details": result.no_match_details or "No match"
+        }
+        return func.HttpResponse(body=str(error_response), status_code=500)
