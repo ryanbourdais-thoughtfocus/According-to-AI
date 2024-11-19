@@ -25,10 +25,23 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     # Convert the video file to audio using ffmpeg (ensure ffmpeg is installed)
     temp_audio_path = os.path.join(tempfile.gettempdir(), "audio.wav")
     try:
-        subprocess.run(["ffmpeg", "-i", temp_file_path, "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2", temp_audio_path], check=True)
+        subprocess.run([
+            "ffmpeg", "-i", temp_file_path, "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2", temp_audio_path
+        ], check=True)
     except Exception as e:
         logging.error(f"Error while converting video to audio: {str(e)}")
         return func.HttpResponse(f"Error while converting video to audio: {str(e)}", status_code=500)
+
+    # Split the audio file into chunks using ffmpeg
+    chunk_dir = tempfile.mkdtemp()  # Create a temporary directory for chunks
+    chunk_prefix = os.path.join(chunk_dir, "chunk")
+    try:
+        subprocess.run([
+            "ffmpeg", "-i", temp_audio_path, "-f", "segment", "-segment_time", "60", "-c", "copy", f"{chunk_prefix}%03d.wav"
+        ], check=True)
+    except Exception as e:
+        logging.error(f"Error while splitting audio into chunks: {str(e)}")
+        return func.HttpResponse(f"Error while splitting audio into chunks: {str(e)}", status_code=500)
 
     # Initialize Azure Speech SDK
     speech_key = os.environ.get("SPEECH_KEY")
@@ -37,26 +50,21 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse("SPEECH_KEY and SERVICE_REGION environment variables are not set.", status_code=500)
 
     speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
-    audio_config = speechsdk.AudioConfig(filename=temp_audio_path)
-
-    # Set up the speech recognizer for continuous recognition
-    speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
-
-    # Collect the full transcript
     all_transcripts = []
 
-    def handle_recognized(evt):
-        all_transcripts.append(evt.result.text)
+    # Transcribe each audio chunk
+    for chunk_file in sorted(os.listdir(chunk_dir)):
+        chunk_path = os.path.join(chunk_dir, chunk_file)
+        audio_config = speechsdk.AudioConfig(filename=chunk_path)
+        speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
 
-    # Connect the event handler
-    speech_recognizer.recognized.connect(handle_recognized)
+        # Perform the transcription for each chunk
+        result = speech_recognizer.recognize_once()
+        if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+            all_transcripts.append(result.text)
+        else:
+            logging.warning(f"No speech recognized in {chunk_file} or an error occurred.")
 
-    # Start continuous recognition
-    speech_recognizer.start_continuous_recognition()
-    logging.info("Recognition started. Waiting for completion...")
-
-    # Wait until recognition is done
-    speech_recognizer.recognize_once_async().get()
-
-    # Stop recognition
-    speech_recognizer.stop()
+    # Combine all transcripts into one
+    full_transcript = " ".join(all_transcripts)
+    return func.HttpResponse(full_transcript, status_code=200)
