@@ -3,12 +3,10 @@ import logging
 import os
 import azure.cognitiveservices.speech as speechsdk
 import tempfile
+import subprocess
 
-process_file_api = func.Blueprint()
-
-@process_file_api.route(route="fileToTranscript", auth_level=func.AuthLevel.ANONYMOUS)
-def fileToTranscript(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python HTTP trigger function processed a request.')
+def main(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("Python HTTP trigger function processed a request.")
 
     # Check if the request contains a file
     try:
@@ -24,10 +22,9 @@ def fileToTranscript(req: func.HttpRequest) -> func.HttpResponse:
     with open(temp_file_path, "wb") as temp_file:
         temp_file.write(file.read())
 
-    # Convert the video file to audio using ffmpeg (ensure ffmpeg is installed on your system)
+    # Convert the video file to audio using ffmpeg (ensure ffmpeg is installed)
     temp_audio_path = os.path.join(tempfile.gettempdir(), "audio.wav")
     try:
-        import subprocess
         subprocess.run(["ffmpeg", "-i", temp_file_path, "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2", temp_audio_path], check=True)
     except Exception as e:
         logging.error(f"Error while converting video to audio: {str(e)}")
