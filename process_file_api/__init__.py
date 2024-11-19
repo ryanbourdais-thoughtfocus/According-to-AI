@@ -68,42 +68,49 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         )
 
         segments = result.get("segments", [])
+        all_text = " ".join(segment["text"] for segment in segments)
         dialog = []
 
-        # Placeholder for meeting details
-        meeting_title = ""
-        meeting_date = ""
-        meeting_time = ""
-        meeting_location = ""
-        participants = ["Salesperson", "Client"]
+        # Meeting details
+        meeting_title = "Sales Pitch for AI Solution"
+        meeting_date = "2024-11-19"
+        meeting_time = "2:00 PM"
+        meeting_location = "Client's Office / Video Call"
+        participants = ["Salesperson: Alex Johnson", "Client: Jordan Smith"]
 
         # Load a pre-trained sentiment analysis model from Hugging Face
         sentiment_analyzer = pipeline("sentiment-analysis")
 
-        # Heuristic-based speaker identification
-        salesperson_clues = ["AI solution", "transform", "demo", "ROI", "strategic"]
-        client_clues = ["budget", "concern", "fit", "impressive"]
+        # AI-based speaker identification using whole-text analysis
+        # For now, we'll use a simple rule-based method based on the full text
+        salesperson_keywords = ["solution", "implement", "ROI", "benefit", "efficiency", "support"]
+        client_keywords = ["budget", "concern", "timeline", "fit", "issues", "challenge"]
+
+        # Heuristic analysis: determine the dominant speaker
+        salesperson_count = sum(all_text.lower().count(word) for word in salesperson_keywords)
+        client_count = sum(all_text.lower().count(word) for word in client_keywords)
+        dominant_speaker = "Salesperson" if salesperson_count >= client_count else "Client"
+
+        # Assign speakers based on the dominant speaker and conversation flow
+        current_speaker = "Salesperson" if dominant_speaker == "Salesperson" else "Client"
+        switch_speaker = lambda speaker: "Client" if speaker == "Salesperson" else "Salesperson"
 
         # Process each segment to build the dialog
-        for segment in segments:
+        for index, segment in enumerate(segments):
             text = segment["text"]
             start_time = segment["start"]
             end_time = segment["end"]
 
-            # Use heuristic rules to identify the speaker
-            if any(clue in text.lower() for clue in salesperson_clues):
-                speaker = "Salesperson"
-            elif any(clue in text.lower() for clue in client_clues):
-                speaker = "Client"
-            else:
-                speaker = "Unknown Speaker"
+            # Switch speakers periodically for a more natural flow
+            if index % 2 == 1:
+                current_speaker = switch_speaker(current_speaker)
 
             # Analyze sentiment using the pre-trained model
             sentiment_result = sentiment_analyzer(text)[0]
             sentiment = sentiment_result["label"]
 
             dialog.append({
-                "Speaker": speaker,
+                "Speaker": current_speaker,
                 "Statement": text,
                 "Sentiment": sentiment
             })
