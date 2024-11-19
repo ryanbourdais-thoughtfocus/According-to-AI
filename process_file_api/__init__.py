@@ -77,31 +77,30 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         meeting_location = ""
         participants = ["Salesperson", "Client"]
 
-        # Load a pre-trained text classification model for speaker role identification
-        classifier = pipeline("text-classification", model="distilbert-base-uncased")
+        # Load a pre-trained sentiment analysis model from Hugging Face
+        sentiment_analyzer = pipeline("sentiment-analysis")
 
-        # Use conversation context to alternate speakers
-        current_speaker = "Salesperson"  # Start with Salesperson
+        # Heuristic-based speaker identification
+        salesperson_clues = ["AI solution", "transform", "demo", "ROI", "strategic"]
+        client_clues = ["budget", "concern", "fit", "impressive"]
 
-        # Loop through segments to build the dialog and infer speakers
+        # Process each segment to build the dialog
         for segment in segments:
             text = segment["text"]
+            start_time = segment["start"]
+            end_time = segment["end"]
 
-            # Use heuristics or NLP model for speaker identification
-            classification = classifier(text)[0]
-            label = classification["label"]
-
-            # Heuristic: Alternate speakers and use simple keyword detection
-            if any(phrase in text.lower() for phrase in ["thank you", "pleased to meet", "good morning"]):
-                speaker = "Client" if current_speaker == "Salesperson" else "Salesperson"
+            # Use heuristic rules to identify the speaker
+            if any(clue in text.lower() for clue in salesperson_clues):
+                speaker = "Salesperson"
+            elif any(clue in text.lower() for clue in client_clues):
+                speaker = "Client"
             else:
-                speaker = current_speaker
+                speaker = "Unknown Speaker"
 
-            # Alternate for the next statement
-            current_speaker = "Client" if speaker == "Salesperson" else "Salesperson"
-
-            # Placeholder sentiment analysis
-            sentiment = "Neutral"  # Replace with actual sentiment analysis logic if needed
+            # Analyze sentiment using the pre-trained model
+            sentiment_result = sentiment_analyzer(text)[0]
+            sentiment = sentiment_result["label"]
 
             dialog.append({
                 "Speaker": speaker,
@@ -117,10 +116,10 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     # Construct the final JSON structure
     response_data = {
         "Meeting": {
-            "Title": meeting_title or "Unknown Title",
-            "Date": meeting_date or "Unknown Date",
-            "Time": meeting_time or "Unknown Time",
-            "Location": meeting_location or "Unknown Location",
+            "Title": meeting_title,
+            "Date": meeting_date,
+            "Time": meeting_time,
+            "Location": meeting_location,
             "Participants": participants,
             "Dialog": dialog,
             "ClosingNote": "The meeting concludes. Details may need to be followed up.",
