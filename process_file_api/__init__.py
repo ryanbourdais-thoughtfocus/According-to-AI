@@ -6,7 +6,7 @@ import tempfile
 import subprocess
 import json
 import uuid
-import threading
+import sys
 import time
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
@@ -52,6 +52,20 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Unexpected error: {str(e)}")
         return func.HttpResponse(f"Unexpected error: {str(e)}", status_code=500)
 
+    # Split the audio file into chunks using ffmpeg
+    chunk_dir = tempfile.mkdtemp()  # Directory to store audio chunks
+    chunk_prefix = os.path.join(chunk_dir, "chunk")
+    try:
+        start_time = time.time()
+        subprocess.run([
+            "ffmpeg", "-i", temp_audio_path, "-f", "segment", "-segment_time", "60",
+            "-c", "copy", f"{chunk_prefix}%03d.wav"
+        ], check=True)
+        logging.info(f"Audio split into chunks in {time.time() - start_time:.2f} seconds.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error while splitting audio into chunks: {e.stderr}")
+        return func.HttpResponse(f"Error while splitting audio into chunks: {e.stderr}", status_code=500)
+
     # Initialize Azure Speech SDK
     speech_key = os.environ.get("SPEECH_KEY")
     service_region = os.environ.get("SERVICE_REGION")
@@ -59,46 +73,52 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse("SPEECH_KEY and SERVICE_REGION environment variables are not set.", status_code=500)
 
     speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
-    speech_config.speech_recognition_language = "en-US"  # Set your desired language
-    audio_config = speechsdk.AudioConfig(filename=temp_audio_path)
+    speech_config.speech_recognition_language = "en-US"
 
-    # List to store transcription results
+    # List to store transcription results and progress tracking
     transcription_results = []
+    chunk_files = sorted(os.listdir(chunk_dir))
+    total_chunks = len(chunk_files)
+    chunk_progress = [0] * total_chunks  # Initialize progress for each chunk
 
-    # Event to signal when recognition is done
-    done = threading.Event()
+    # Function to update the progress table
+    def update_progress_table():
+        sys.stdout.write("\033[H\033[J")  # Clear the console
+        sys.stdout.write("|chunk|progress|\n")
+        for i, progress in enumerate(chunk_progress):
+            sys.stdout.write(f"|{i + 1:>5}|{progress:>8}%|\n")
+        sys.stdout.write("|--------------|\n")
+        total_progress = sum(chunk_progress) / total_chunks
+        sys.stdout.write(f"|Total:   {total_progress:.1f}%|\n")
+        sys.stdout.flush()
 
-    def handle_recognized(evt):
-        if evt.result.reason == speechsdk.ResultReason.RecognizedSpeech:
-            transcription_results.append({"text": evt.result.text})
-            logging.info(f"Recognized: {evt.result.text}")
-        elif evt.result.reason == speechsdk.ResultReason.NoMatch:
-            logging.warning("No speech recognized.")
+    # Process each chunk
+    for index, chunk_file in enumerate(chunk_files):
+        chunk_path = os.path.join(chunk_dir, chunk_file)
+        audio_config = speechsdk.AudioConfig(filename=chunk_path)
+        speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
 
-    def handle_session_stopped(evt):
-        logging.info("Session stopped event received. Stopping recognition.")
-        done.set()
+        # Handle recognized speech
+        def handle_recognized(evt):
+            if evt.result.reason == speechsdk.ResultReason.RecognizedSpeech:
+                transcription_results.append({"text": evt.result.text})
+                logging.info(f"Recognized: {evt.result.text}")
+            elif evt.result.reason == speechsdk.ResultReason.NoMatch:
+                logging.warning("No speech recognized.")
 
-    def handle_canceled(evt):
-        logging.error(f"Recognition canceled: {evt.reason}")
-        done.set()
+        # Connect event handler
+        speech_recognizer.recognized.connect(handle_recognized)
 
-    # Create a speech recognizer and connect event handlers
-    speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
-    speech_recognizer.recognized.connect(handle_recognized)
-    speech_recognizer.session_stopped.connect(handle_session_stopped)
-    speech_recognizer.canceled.connect(handle_canceled)
+        # Recognize speech in the chunk
+        logging.info(f"Processing chunk {index + 1}/{total_chunks}: {chunk_file}")
+        start_time = time.time()
+        speech_recognizer.recognize_once_async().get()  # Perform recognition
+        processing_time = time.time() - start_time
+        logging.info(f"Chunk {index + 1} processed in {processing_time:.2f} seconds.")
 
-    # Start continuous recognition
-    logging.info("Starting continuous recognition...")
-    speech_recognizer.start_continuous_recognition()
-
-    # Wait until the recognition is done
-    done.wait()  # Wait for the session stopped or canceled event
-
-    # Stop recognition
-    speech_recognizer.stop_continuous_recognition()
-    logging.info("Continuous recognition stopped.")
+        # Update progress
+        chunk_progress[index] = 100  # Mark this chunk as complete
+        update_progress_table()  # Display the updated progress table
 
     # Return the results as a JSON response
     response_data = {
