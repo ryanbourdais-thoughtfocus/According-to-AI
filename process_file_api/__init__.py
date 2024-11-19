@@ -22,12 +22,36 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     with open(temp_file_path, "wb") as temp_file:
         temp_file.write(file.read())
 
-    # Convert the video file to audio using ffmpeg (ensure ffmpeg is installed)
+    # Check if ffmpeg has Nvidia GPU hardware acceleration support
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-codecs"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True
+        )
+        # Check if 'h264_nvenc' is in the output
+        ffmpeg_supports_cuda = "h264_nvenc" in result.stdout
+    except Exception as e:
+        logging.error(f"Error while checking ffmpeg codecs: {str(e)}")
+        ffmpeg_supports_cuda = False
+
+    # Convert the video file to audio using ffmpeg with GPU acceleration if available
     temp_audio_path = os.path.join(tempfile.gettempdir(), "audio.wav")
     try:
-        subprocess.run([
-            "ffmpeg", "-i", temp_file_path, "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2", temp_audio_path
-        ], check=True)
+        if ffmpeg_supports_cuda:
+            logging.info("Using Nvidia GPU hardware acceleration for ffmpeg.")
+            subprocess.run([
+                "ffmpeg", "-hwaccel", "cuda", "-i", temp_file_path, "-vn",
+                "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2", temp_audio_path
+            ], check=True)
+        else:
+            logging.info("Nvidia GPU hardware acceleration not available. Using CPU for ffmpeg.")
+            subprocess.run([
+                "ffmpeg", "-i", temp_file_path, "-vn",
+                "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2", temp_audio_path
+            ], check=True)
     except Exception as e:
         logging.error(f"Error while converting video to audio: {str(e)}")
         return func.HttpResponse(f"Error while converting video to audio: {str(e)}", status_code=500)
