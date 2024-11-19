@@ -8,6 +8,7 @@ import json
 import uuid
 import sys
 import time
+import threading
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Python HTTP trigger function processed a request.")
@@ -36,8 +37,6 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         "ffmpeg", "-i", temp_file_path, "-vn",
         "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "1", temp_audio_path
     ]
-
-    # Log the full ffmpeg command
     logging.info(f"Full ffmpeg command: {' '.join(ffmpeg_command)}")
 
     try:
@@ -112,7 +111,12 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         # Recognize speech in the chunk
         logging.info(f"Processing chunk {index + 1}/{total_chunks}: {chunk_file}")
         start_time = time.time()
-        speech_recognizer.recognize_once_async().get()  # Perform recognition
+        speech_recognizer.start_continuous_recognition()
+
+        # Wait for a reasonable amount of time to ensure the chunk is processed
+        time.sleep(60)  # Adjust the sleep time as needed
+        speech_recognizer.stop_continuous_recognition()
+
         processing_time = time.time() - start_time
         logging.info(f"Chunk {index + 1} processed in {processing_time:.2f} seconds.")
 
