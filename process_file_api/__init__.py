@@ -6,6 +6,7 @@ import tempfile
 import subprocess
 import json
 import uuid
+import threading
 import time
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
@@ -61,19 +62,43 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     speech_config.speech_recognition_language = "en-US"  # Set your desired language
     audio_config = speechsdk.AudioConfig(filename=temp_audio_path)
 
-    # Perform the transcription using recognize_once_async
-    speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
-
-    logging.info("Starting single recognition...")
-    result = speech_recognizer.recognize_once_async().get()
-
-    # Check if the result contains recognized speech
+    # List to store transcription results
     transcription_results = []
-    if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-        transcription_results.append({"text": result.text})
-        logging.info(f"Recognized: {result.text}")
-    else:
-        logging.warning("No speech recognized or an error occurred.")
+
+    # Event to signal when recognition is done
+    done = threading.Event()
+
+    def handle_recognized(evt):
+        if evt.result.reason == speechsdk.ResultReason.RecognizedSpeech:
+            transcription_results.append({"text": evt.result.text})
+            logging.info(f"Recognized: {evt.result.text}")
+        elif evt.result.reason == speechsdk.ResultReason.NoMatch:
+            logging.warning("No speech recognized.")
+
+    def handle_session_stopped(evt):
+        logging.info("Session stopped event received. Stopping recognition.")
+        done.set()
+
+    def handle_canceled(evt):
+        logging.error(f"Recognition canceled: {evt.reason}")
+        done.set()
+
+    # Create a speech recognizer and connect event handlers
+    speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+    speech_recognizer.recognized.connect(handle_recognized)
+    speech_recognizer.session_stopped.connect(handle_session_stopped)
+    speech_recognizer.canceled.connect(handle_canceled)
+
+    # Start continuous recognition
+    logging.info("Starting continuous recognition...")
+    speech_recognizer.start_continuous_recognition()
+
+    # Wait until the recognition is done
+    done.wait()  # Wait for the session stopped or canceled event
+
+    # Stop recognition
+    speech_recognizer.stop_continuous_recognition()
+    logging.info("Continuous recognition stopped.")
 
     # Return the results as a JSON response
     response_data = {
