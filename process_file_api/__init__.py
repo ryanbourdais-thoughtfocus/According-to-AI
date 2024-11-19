@@ -7,6 +7,7 @@ import json
 import uuid
 import whisper
 import torch
+import requests
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Python HTTP trigger function processed a request.")
@@ -56,7 +57,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     # Load the Whisper model with the appropriate device
     model = whisper.load_model("large", device=device)
 
-    # Transcribe the full audio file with adjusted parameters
+    # Transcribe the full audio file with Whisper
     try:
         logging.info("Starting transcription with Whisper...")
         result = model.transcribe(
@@ -69,24 +70,27 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         segments = result.get("segments", [])
         dialog = []
 
-        # Attempt to extract meeting details from the transcribed text (placeholder logic)
+        # Placeholder for meeting details
         meeting_title = ""
         meeting_date = ""
         meeting_time = ""
         meeting_location = ""
         participants = []
 
-        # Loop through segments to build the dialog and extract details
+        # Loop through segments to build the dialog
         for segment in segments:
             text = segment["text"]
-            # Placeholder logic to extract speaker and sentiment
-            speaker = "Unknown Speaker"  # Replace this with actual logic if available
-            sentiment = "Neutral"  # Placeholder, replace with actual sentiment analysis logic
+            start_time = segment["start"]
+            end_time = segment["end"]
+
+            # Call Azure Speaker Recognition
+            speaker = identify_speaker(temp_audio_path, start_time, end_time)
+            sentiment = analyze_sentiment(temp_audio_path, start_time, end_time)
 
             dialog.append({
-                "Speaker": speaker,
+                "Speaker": speaker or "Unknown Speaker",
                 "Statement": text,
-                "Sentiment": sentiment
+                "Sentiment": sentiment or "Neutral"
             })
 
         logging.info("Transcription and data extraction completed.")
@@ -94,7 +98,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Error during transcription: {str(e)}")
         return func.HttpResponse(f"Error during transcription: {str(e)}", status_code=500)
 
-    # Construct the final JSON structure with placeholders for missing information
+    # Construct the final JSON structure
     response_data = {
         "Meeting": {
             "Title": meeting_title or "Unknown Title",
@@ -114,3 +118,71 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     }
 
     return func.HttpResponse(json.dumps(response_data), status_code=200, mimetype="application/json")
+
+# Function to identify speaker using Azure Speaker Recognition
+def identify_speaker(audio_path, start_time, end_time):
+    try:
+        # Read your Azure subscription key and endpoint from environment variables
+        subscription_key = os.environ.get("SPEECH_KEY")
+        endpoint = os.environ.get("SPEECH_ENDPOINT")
+
+        if not subscription_key or not endpoint:
+            logging.error("Azure Speaker Recognition key or endpoint not set.")
+            return "Unknown Speaker"
+
+        # Prepare the audio file for Azure API
+        audio_clip_path = extract_audio_clip(audio_path, start_time, end_time)
+        with open(audio_clip_path, "rb") as audio_file:
+            headers = {
+                "Ocp-Apim-Subscription-Key": subscription_key,
+                "Content-Type": "audio/wav"
+            }
+            response = requests.post(f"{endpoint}/identify", headers=headers, data=audio_file)
+            if response.status_code == 200:
+                speaker_data = response.json()
+                return speaker_data.get("identifiedSpeaker", "Unknown Speaker")
+            else:
+                logging.error(f"Azure Speaker Recognition API error: {response.text}")
+                return "Unknown Speaker"
+    except Exception as e:
+        logging.error(f"Error identifying speaker: {str(e)}")
+        return "Unknown Speaker"
+
+# Function to analyze sentiment using Azure Audio Sentiment Analysis
+def analyze_sentiment(audio_path, start_time, end_time):
+    try:
+        # Read your Azure subscription key and endpoint from environment variables
+        subscription_key = os.environ.get("SPEECH_KEY")
+        endpoint = os.environ.get("SPEECH_ENDPOINT")
+
+        if not subscription_key or not endpoint:
+            logging.error("Azure Sentiment Analysis key or endpoint not set.")
+            return "Neutral"
+
+        # Prepare the audio file for Azure API
+        audio_clip_path = extract_audio_clip(audio_path, start_time, end_time)
+        with open(audio_clip_path, "rb") as audio_file:
+            headers = {
+                "Ocp-Apim-Subscription-Key": subscription_key,
+                "Content-Type": "audio/wav"
+            }
+            response = requests.post(f"{endpoint}/analyzeSentiment", headers=headers, data=audio_file)
+            if response.status_code == 200:
+                sentiment_data = response.json()
+                return sentiment_data.get("sentiment", "Neutral")
+            else:
+                logging.error(f"Azure Sentiment Analysis API error: {response.text}")
+                return "Neutral"
+    except Exception as e:
+        logging.error(f"Error analyzing sentiment: {str(e)}")
+        return "Neutral"
+
+# Helper function to extract a specific audio clip
+def extract_audio_clip(audio_path, start_time, end_time):
+    clip_path = os.path.join(tempfile.gettempdir(), f"clip_{uuid.uuid4().hex}.wav")
+    ffmpeg_command = [
+        "ffmpeg", "-i", audio_path, "-ss", str(start_time), "-to", str(end_time),
+        "-c", "copy", clip_path
+    ]
+    subprocess.run(ffmpeg_command, check=True)
+    return clip_path
