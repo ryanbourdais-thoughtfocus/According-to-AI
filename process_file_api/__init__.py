@@ -8,6 +8,7 @@ import uuid
 import whisper
 import torch
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Python HTTP trigger function processed a request.")
@@ -77,21 +78,27 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         meeting_location = ""
         participants = []
 
-        # Loop through segments to build the dialog
-        for segment in segments:
-            text = segment["text"]
+        # Function to run speaker identification and sentiment analysis in parallel
+        def process_segment(segment):
             start_time = segment["start"]
             end_time = segment["end"]
+            text = segment["text"]
 
-            # Call Azure Speaker Recognition
+            # Run Azure Speaker Recognition and Sentiment Analysis
             speaker = identify_speaker(temp_audio_path, start_time, end_time)
             sentiment = analyze_sentiment(temp_audio_path, start_time, end_time)
 
-            dialog.append({
+            return {
                 "Speaker": speaker or "Unknown Speaker",
                 "Statement": text,
                 "Sentiment": sentiment or "Neutral"
-            })
+            }
+
+        # Use ThreadPoolExecutor to run processes concurrently
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(process_segment, segment) for segment in segments]
+            for future in as_completed(futures):
+                dialog.append(future.result())
 
         logging.info("Transcription and data extraction completed.")
     except Exception as e:
