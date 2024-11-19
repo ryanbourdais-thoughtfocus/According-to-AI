@@ -1,14 +1,11 @@
 import logging
 import os
 import azure.functions as func
-import azure.cognitiveservices.speech as speechsdk
 import tempfile
 import subprocess
 import json
 import uuid
-import sys
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import whisper
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Python HTTP trigger function processed a request.")
@@ -47,96 +44,21 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Error while converting video to audio: {e.stderr}")
         return func.HttpResponse(f"Error while converting video to audio: {e.stderr}", status_code=500)
 
-    # Split the audio file into chunks using ffmpeg
-    chunk_dir = tempfile.mkdtemp()  # Directory to store audio chunks
-    chunk_prefix = os.path.join(chunk_dir, "chunk")
+    # Load the Whisper model
+    model = whisper.load_model("base")  # You can use "tiny", "base", "small", "medium", or "large"
+
+    # Transcribe the full audio file
     try:
-        subprocess.run([
-            "ffmpeg", "-i", temp_audio_path, "-f", "segment", "-segment_time", "60",
-            "-c", "copy", f"{chunk_prefix}%03d.wav"
-        ], check=True)
-        logging.info("Audio split into chunks.")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Error while splitting audio into chunks: {e.stderr}")
-        return func.HttpResponse(f"Error while splitting audio into chunks: {e.stderr}", status_code=500)
+        logging.info("Starting transcription with Whisper...")
+        result = model.transcribe(temp_audio_path)
+        transcription_text = result["text"]
+        logging.info(f"Transcription completed: {transcription_text}")
+    except Exception as e:
+        logging.error(f"Error during transcription: {str(e)}")
+        return func.HttpResponse(f"Error during transcription: {str(e)}", status_code=500)
 
-    # Initialize Azure Speech SDK
-    speech_key = os.environ.get("SPEECH_KEY")
-    service_region = os.environ.get("SERVICE_REGION")
-    if not speech_key or not service_region:
-        return func.HttpResponse("SPEECH_KEY and SERVICE_REGION environment variables are not set.", status_code=500)
-
-    speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
-    speech_config.speech_recognition_language = "en-US"
-
-    # List to store transcription results and progress tracking
-    transcription_results = []
-    chunk_files = sorted(os.listdir(chunk_dir))
-    total_chunks = len(chunk_files)
-    chunk_progress = [0] * total_chunks  # Initialize progress for each chunk
-
-    # Function to update the progress table
-    def update_progress_table():
-        sys.stdout.write("\033[H\033[J")  # Clear the console
-        sys.stdout.write("|chunk|progress|\n")
-        for i, progress in enumerate(chunk_progress):
-            sys.stdout.write(f"|{i + 1:>5}|{progress:>8}%|\n")
-        sys.stdout.write("|--------------|\n")
-        total_progress = sum(chunk_progress) / total_chunks
-        sys.stdout.write(f"|Total:   {total_progress:.1f}%|\n")
-        sys.stdout.flush()
-
-    # Function to process each audio chunk with continuous recognition
-    def process_chunk(index, chunk_file):
-        chunk_path = os.path.join(chunk_dir, chunk_file)
-        audio_config = speechsdk.AudioConfig(filename=chunk_path)
-        speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
-
-        # Synchronization event to wait for recognition
-        done = threading.Event()
-
-        # Handle recognized speech
-        def handle_recognized(evt):
-            if evt.result.reason == speechsdk.ResultReason.RecognizedSpeech:
-                transcription_results.append({"text": evt.result.text})
-                logging.info(f"Recognized: {evt.result.text}")
-            elif evt.result.reason == speechsdk.ResultReason.NoMatch:
-                logging.warning("No speech recognized.")
-
-        # Handle session stopped and canceled events
-        def handle_session_stopped(evt):
-            logging.info("Session stopped.")
-            done.set()  # Signal that the session has stopped
-
-        def handle_canceled(evt):
-            logging.error(f"Recognition canceled: {evt.reason}")
-            done.set()  # Signal that recognition is done
-
-        # Connect event handlers
-        speech_recognizer.recognized.connect(handle_recognized)
-        speech_recognizer.session_stopped.connect(handle_session_stopped)
-        speech_recognizer.canceled.connect(handle_canceled)
-
-        # Start continuous recognition
-        logging.info(f"Processing chunk {index + 1}/{total_chunks}: {chunk_file}")
-        speech_recognizer.start_continuous_recognition()
-        done.wait()  # Wait for the session to stop
-        speech_recognizer.stop_continuous_recognition()
-
-        chunk_progress[index] = 100  # Mark this chunk as complete
-        update_progress_table()
-
-    # Use ThreadPoolExecutor to process chunks in parallel
-    with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(process_chunk, index, chunk_file) for index, chunk_file in enumerate(chunk_files)]
-        for future in as_completed(futures):
-            try:
-                future.result()
-            except Exception as e:
-                logging.error(f"Error processing chunk: {str(e)}")
-
-    # Return the results as a JSON response
+    # Return the transcription as a JSON response
     response_data = {
-        "transcription": transcription_results
+        "transcription": [{"text": transcription_text}]
     }
     return func.HttpResponse(json.dumps(response_data), status_code=200, mimetype="application/json")
