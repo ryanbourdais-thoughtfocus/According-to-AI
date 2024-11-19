@@ -46,20 +46,19 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(f"Error while converting video to audio: {e.stderr}", status_code=500)
 
     # Check CUDA availability
-    if not torch.cuda.is_available():
-        logging.warning("CUDA is not available. Using CPU instead.")
-    else:
+    if torch.cuda.is_available():
         logging.info(f"Using CUDA: {torch.cuda.get_device_name(0)}")
+        device = "cuda"
+    else:
+        logging.warning("CUDA is not available. Using CPU instead.")
+        device = "cpu"
 
-    # Load the Whisper model with CUDA
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = whisper.load_model("large", device="cpu")  # Load on CPU first
-    if device == "cuda":
-        model = model.to("cuda")  # Move the model to the GPU explicitly
+    # Load the Whisper model with the appropriate device
+    model = whisper.load_model("large", device=device)
 
     # Transcribe the full audio file with adjusted parameters
     try:
-        logging.info("Starting transcription with Whisper on CUDA...")
+        logging.info("Starting transcription with Whisper...")
         result = model.transcribe(
             temp_audio_path,
             no_speech_threshold=0.1,
