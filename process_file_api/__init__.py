@@ -6,6 +6,7 @@ import subprocess
 import json
 import uuid
 import whisper
+import torch
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Python HTTP trigger function processed a request.")
@@ -44,13 +45,28 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Error while converting video to audio: {e.stderr}")
         return func.HttpResponse(f"Error while converting video to audio: {e.stderr}", status_code=500)
 
-    # Load the Whisper model
-    model = whisper.load_model("base")  # You can use "tiny", "base", "small", "medium", or "large"
+    # Check CUDA availability
+    if not torch.cuda.is_available():
+        logging.warning("CUDA is not available. Using CPU instead.")
+    else:
+        logging.info(f"Using CUDA: {torch.cuda.get_device_name(0)}")
 
-    # Transcribe the full audio file
+    # Load the Whisper model with CUDA
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = whisper.load_model("large", device="cpu")  # Load on CPU first
+    if device == "cuda":
+        model = model.to("cuda")  # Move the model to the GPU explicitly
+
+    # Transcribe the full audio file with adjusted parameters
     try:
-        logging.info("Starting transcription with Whisper...")
-        result = model.transcribe(temp_audio_path)
+        logging.info("Starting transcription with Whisper on CUDA...")
+        result = model.transcribe(
+            temp_audio_path,
+            no_speech_threshold=0.1,
+            logprob_threshold=-1.0,
+            condition_on_previous_text=True
+        )
+
         segments = result.get("segments", [])
         transcription_results = []
 
@@ -60,7 +76,6 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 "start": segment["start"],
                 "end": segment["end"],
                 "text": segment["text"]
-                # Note: Whisper does not provide speaker labels, but you can add logic here for speaker diarization
             })
         
         logging.info("Transcription completed.")
