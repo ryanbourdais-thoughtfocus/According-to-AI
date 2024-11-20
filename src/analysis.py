@@ -2,6 +2,9 @@ from langchain_openai import ChatOpenAI
 import json
 import time
 import os
+import dotenv
+
+dotenv.load_dotenv()
 
 # Initialize the ChatOpenAI model
 llm = ChatOpenAI(api_key=os.getenv("OPENAI_API_KEY"), model_name="gpt-3.5-turbo", max_tokens=300, request_timeout=30)
