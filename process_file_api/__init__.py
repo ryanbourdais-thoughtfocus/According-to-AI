@@ -9,9 +9,51 @@ import whisper
 import torch
 import openai
 from openai import OpenAI
+from concurrent.futures import ThreadPoolExecutor
 
 # Set your OpenAI API key
-openai_api_key = os.environ.get("OPENAI_API_KEY")
+openai.api_key = os.environ.get("OPENAI_API_KEY")
+
+def transcribe_audio_with_whisper(model, audio_path):
+    try:
+        logging.info("Starting transcription with Whisper...")
+        result = model.transcribe(
+            audio_path,
+            no_speech_threshold=0.1,
+            logprob_threshold=-1.0,
+            condition_on_previous_text=True
+        )
+        full_text = result.get("text", "")
+        logging.info("Transcription completed.")
+        return full_text
+    except Exception as e:
+        logging.error(f"Error during transcription: {str(e)}")
+        raise
+
+def analyze_text_with_openai(full_text):
+    try:
+        logging.info("Sending transcription to OpenAI for analysis...")
+        client = OpenAI(api_key = openai.api_key)
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                                "Analyze the following meeting transcript. Identify the speakers as either 'Salesperson' or 'Client' and "
+                                "determine the sentiment of each statement. Provide the analysis in JSON format with each statement "
+                                "including 'Speaker', 'Statement', and 'Sentiment'.\n\n"
+                                f"Transcript:\n{full_text}"
+                            ),
+                },
+            ],
+        )
+        analysis = response.choices[0].message.content.strip()
+        logging.info("OpenAI analysis completed.")
+        return analysis
+    except Exception as e:
+        logging.error(f"Error during OpenAI analysis: {str(e)}")
+        raise
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Python HTTP trigger function processed a request.")
@@ -61,66 +103,35 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     # Load the Whisper model with the appropriate device
     model = whisper.load_model("large", device=device)
 
-    # Transcribe the full audio file with Whisper
+    # Run transcription and OpenAI analysis concurrently
     try:
-        logging.info("Starting transcription with Whisper...")
-        result = model.transcribe(
-            temp_audio_path,
-            no_speech_threshold=0.1,
-            logprob_threshold=-1.0,
-            condition_on_previous_text=True
-        )
+        with ThreadPoolExecutor() as executor:
+            future_transcription = executor.submit(transcribe_audio_with_whisper, model, temp_audio_path)
+            future_analysis = executor.submit(analyze_text_with_openai, future_transcription.result())
+            
+            # Wait for both tasks to complete
+            full_text = future_transcription.result()
+            analysis = future_analysis.result()
 
-        # Get the entire transcribed text
-        full_text = result.get("text", "")
-        logging.info("Transcription completed.")
+        logging.info("Transcription and analysis completed.")
     except Exception as e:
-        logging.error(f"Error during transcription: {str(e)}")
-        return func.HttpResponse(f"Error during transcription: {str(e)}", status_code=500)
-
-    # Use OpenAI to analyze the transcribed text
-    try:
-        logging.info("Sending transcription to OpenAI for analysis...")
-        client = OpenAI(api_key = openai_api_key)
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                                "Analyze the following meeting transcript. Identify the speakers as either 'Salesperson' or 'Client' and "
-                                "determine the sentiment of each statement. Provide the analysis in JSON format with each statement "
-                                "including 'Speaker', 'Statement', and 'Sentiment'.\n\n"
-                                f"Transcript:\n{full_text}"
-                            ),
-                },
-            ],
-        )
-
-        response_message = response.choices[0].message.content
-        print(response_message)
-        
-        analysis = response_message
-        logging.info("OpenAI analysis completed.")
-    except Exception as e:
-        logging.error(f"Error during OpenAI analysis: {str(e)}")
-        return func.HttpResponse(f"Error during OpenAI analysis: {str(e)}", status_code=500)
+        return func.HttpResponse(f"Error during processing: {str(e)}", status_code=500)
 
     # Construct the final JSON structure
     response_data = {
         "Meeting": {
             "Title": "Sales Pitch for AI Solution",
-            "Date": "2024-11-19",
-            "Time": "2:00 PM",
-            "Location": "Client's Office / Video Call",
-            "Participants": ["Salesperson: Alex Johnson", "Client: Jordan Smith"],
+            "Date": "",
+            "Time": "",
+            "Location": "Video Call",
+            "Participants": ["Salesperson", "Client"],
             "Dialog": json.loads(analysis),
             "ClosingNote": "The meeting concludes. Details may need to be followed up.",
             "PerformanceSummary": {
-                "OverallPerformance": "Unknown",
+                "OverallPerformance": "",
                 "Strengths": [],
                 "AreasForImprovement": [],
-                "ClientResponse": "No specific client response recorded."
+                "ClientResponse": ""
             }
         }
     }
