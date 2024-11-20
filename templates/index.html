@@ -21,7 +21,6 @@
             padding: 40px;
             width: 400px;
             text-align: center;
-            position: relative; /* For spinner positioning */
         }
 
         .upload-container h1 {
@@ -156,6 +155,7 @@
             } finally {
                 spinner.style.display = 'none'; // Hide spinner
                 uploadBox.classList.remove('disabled'); // Enable upload box
+                fileInput.value = ''; // Clear the file input
             }
         }
 
