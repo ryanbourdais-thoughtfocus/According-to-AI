@@ -1,3 +1,14 @@
 .env
 storedPDF/
 uploads/fileInput.txt
+order_count.json
+interactionReviewWithGpt/__pycache__/__init__.cpython-312.pyc
+interactionReviewWithGpt/__pycache__/__main__.cpython-312.pyc
+interactionReviewWithGpt/__pycache__/analysis.cpython-312.pyc
+MailHandling/__pycache__/__init__.cpython-312.pyc
+MailHandling/__pycache__/Email.cpython-312.pyc
+pdfGen/__pycache__/__init__.cpython-312.pyc
+pdfGen/__pycache__/GeneratePDF.cpython-312.pyc
+pdfGen/__pycache__/orderfunction.cpython-312.pyc
+venv/
+uploads/sales-meeting-01_edit.mp4
