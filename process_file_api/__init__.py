@@ -7,7 +7,11 @@ import json
 import uuid
 import whisper
 import torch
-from transformers import pipeline
+import openai
+from openai import OpenAI
+
+# Set your OpenAI API key
+openai_api_key = os.environ.get("OPENAI_API_KEY")
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Python HTTP trigger function processed a request.")
@@ -67,68 +71,50 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             condition_on_previous_text=True
         )
 
-        segments = result.get("segments", [])
-        all_text = " ".join(segment["text"] for segment in segments)
-        dialog = []
-
-        # Meeting details
-        meeting_title = "Sales Pitch for AI Solution"
-        meeting_date = "2024-11-19"
-        meeting_time = "2:00 PM"
-        meeting_location = "Client's Office / Video Call"
-        participants = ["Salesperson: Alex Johnson", "Client: Jordan Smith"]
-
-        # Load a pre-trained sentiment analysis model from Hugging Face
-        sentiment_analyzer = pipeline("sentiment-analysis")
-
-        # AI-based speaker identification using whole-text analysis
-        # For now, we'll use a simple rule-based method based on the full text
-        salesperson_keywords = ["solution", "implement", "ROI", "benefit", "efficiency", "support"]
-        client_keywords = ["budget", "concern", "timeline", "fit", "issues", "challenge"]
-
-        # Heuristic analysis: determine the dominant speaker
-        salesperson_count = sum(all_text.lower().count(word) for word in salesperson_keywords)
-        client_count = sum(all_text.lower().count(word) for word in client_keywords)
-        dominant_speaker = "Salesperson" if salesperson_count >= client_count else "Client"
-
-        # Assign speakers based on the dominant speaker and conversation flow
-        current_speaker = "Salesperson" if dominant_speaker == "Salesperson" else "Client"
-        switch_speaker = lambda speaker: "Client" if speaker == "Salesperson" else "Salesperson"
-
-        # Process each segment to build the dialog
-        for index, segment in enumerate(segments):
-            text = segment["text"]
-            start_time = segment["start"]
-            end_time = segment["end"]
-
-            # Switch speakers periodically for a more natural flow
-            if index % 2 == 1:
-                current_speaker = switch_speaker(current_speaker)
-
-            # Analyze sentiment using the pre-trained model
-            sentiment_result = sentiment_analyzer(text)[0]
-            sentiment = sentiment_result["label"]
-
-            dialog.append({
-                "Speaker": current_speaker,
-                "Statement": text,
-                "Sentiment": sentiment
-            })
-
-        logging.info("Transcription and data extraction completed.")
+        # Get the entire transcribed text
+        full_text = result.get("text", "")
+        logging.info("Transcription completed.")
     except Exception as e:
         logging.error(f"Error during transcription: {str(e)}")
         return func.HttpResponse(f"Error during transcription: {str(e)}", status_code=500)
 
+    # Use OpenAI to analyze the transcribed text
+    try:
+        logging.info("Sending transcription to OpenAI for analysis...")
+        client = OpenAI(api_key = openai_api_key)
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                                "Analyze the following meeting transcript. Identify the speakers as either 'Salesperson' or 'Client' and "
+                                "determine the sentiment of each statement. Provide the analysis in JSON format with each statement "
+                                "including 'Speaker', 'Statement', and 'Sentiment'.\n\n"
+                                f"Transcript:\n{full_text}"
+                            ),
+                },
+            ],
+        )
+
+        response_message = response.choices[0].message.content
+        print(response_message)
+        
+        analysis = response_message
+        logging.info("OpenAI analysis completed.")
+    except Exception as e:
+        logging.error(f"Error during OpenAI analysis: {str(e)}")
+        return func.HttpResponse(f"Error during OpenAI analysis: {str(e)}", status_code=500)
+
     # Construct the final JSON structure
     response_data = {
         "Meeting": {
-            "Title": meeting_title,
-            "Date": meeting_date,
-            "Time": meeting_time,
-            "Location": meeting_location,
-            "Participants": participants,
-            "Dialog": dialog,
+            "Title": "Sales Pitch for AI Solution",
+            "Date": "2024-11-19",
+            "Time": "2:00 PM",
+            "Location": "Client's Office / Video Call",
+            "Participants": ["Salesperson: Alex Johnson", "Client: Jordan Smith"],
+            "Dialog": json.loads(analysis),
             "ClosingNote": "The meeting concludes. Details may need to be followed up.",
             "PerformanceSummary": {
                 "OverallPerformance": "Unknown",
