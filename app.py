@@ -7,6 +7,7 @@ import interactionReviewWithGpt
 import time
 import dotenv
 from datetime import datetime 
+import requests
 
 app = Flask(__name__)
 
@@ -50,14 +51,23 @@ def upload_file():
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
         file.save(file_path)
         
-        # we will make api call from here,
-        # get the transcript
-        # save it as conversation.json
+        # Send the file as part of a POST request
+        with open(file_path, 'rb') as f:
+            response = requests.post(
+                'http://localhost:7071/api/process_file_api',
+                files={'file': f}
+            )
+        
+        if response.status_code == 200:
+            print("File processed successfully")
+        else:
+            print("Failed to process file")
 
-        print("fetching converstaion......")
+
+        print("fetching conversation......")
         print("Analysing the conversation....")
         printTime()
-        json_data = interactionReviewWithGpt.main();
+        json_data = interactionReviewWithGpt.main()
         
         printTime()
         
