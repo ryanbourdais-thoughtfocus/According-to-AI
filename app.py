@@ -8,6 +8,7 @@ import time
 import dotenv
 from datetime import datetime 
 import requests
+import logging
 
 app = Flask(__name__)
 
@@ -21,6 +22,8 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 # Allowed extensions
 ALLOWED_EXTENSIONS = {'txt', 'mp4', 'avi', 'mov', 'mkv'}
 
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -39,49 +42,70 @@ def txt():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    logging.info("Received a file upload request.")
+
     if 'file' not in request.files:
+        logging.error("No file part in the request.")
         return "No file part in the request", 400
 
     file = request.files['file']  
 
     if file.filename == '':
+        logging.error("No selected file.")
         return "No selected file", 400
 
     if file and allowed_file(file.filename):
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
         file.save(file_path)
-        
+        logging.info(f"File saved to {file_path}.")
+
         # Send the file as part of a POST request
-        with open(file_path, 'rb') as f:
-            response = requests.post(
-                'http://localhost:7071/api/process_file_api',
-                files={'file': f}
-            )
-        
-        if response.status_code == 200:
-            print("File processed successfully")
-        else:
-            print("Failed to process file")
+        try:
+            with open(file_path, 'rb') as f:
+                response = requests.post(
+                    'http://localhost:7071/api/process_file_api',
+                    files={'file': f}
+                )
+            logging.info(f"File sent to API. Status code: {response.status_code}")
 
+            if response.status_code == 200:
+                logging.info("File processed successfully.")
+                
+                # Get the entire response JSON
+                response_data = response.json()
 
-        print("fetching conversation......")
-        print("Analysing the conversation....")
-        printTime()
-        json_data = interactionReviewWithGpt.main()
-        
-        printTime()
-        
-        print("got response ....")
-        printTime()
-        print("generating pdf .....")
-        name = generatePDF(json_data)
+                # Write the response JSON to conversation.json
+                with open('conversation.json', 'w') as json_file:
+                    json.dump(response_data, json_file, indent=4)
 
-        print("sending mail with pdf....")
-        printTime()
+                logging.info("Response JSON stored in conversation.json.")
 
-        MailHandling.process_and_send_email(json_data, pdf_path=r'storedPDF/'+name)
-        return f"File uploaded successfully: {file.filename}", 200
-    
+                # Execute the following code only on successful POST
+                logging.info("Fetching conversation...")
+                logging.info("Analysing the conversation...")
+                printTime()
+                json_data = interactionReviewWithGpt.main()
+                
+                printTime()
+                
+                logging.info("Got response.")
+                printTime()
+                logging.info("Generating PDF...")
+                name = generatePDF(json_data)
+
+                logging.info("Sending mail with PDF...")
+                printTime()
+
+                MailHandling.process_and_send_email(json_data, pdf_path=r'storedPDF/'+name)
+                logging.info(f"File uploaded and processed successfully: {file.filename}")
+                return f"File uploaded successfully: {file.filename}", 200
+            else:
+                logging.error("Failed to process file.")
+                return "Error processing file", 500
+        except Exception as e:
+            logging.exception("An error occurred while sending the file to the API.")
+
+    logging.warning("File type not allowed.")
     return "File type not allowed", 400
 
 def generatePDF(json_body = None) :  
