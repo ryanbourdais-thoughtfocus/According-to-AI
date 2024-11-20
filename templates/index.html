@@ -21,6 +21,7 @@
             padding: 40px;
             width: 400px;
             text-align: center;
+            position: relative; /* For spinner positioning */
         }
 
         .upload-container h1 {
@@ -75,6 +76,33 @@
             margin-top: 20px;
             color: #333;
         }
+
+        /* Spinner styles */
+        .spinner {
+            display: none;
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            position: absolute;
+            top: 50%;
+            left: 44%;
+            transform: translate(-50%, -50%);
+            z-index: 1000; /* Ensure spinner is on top */
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Disabled form styles */
+        .disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -88,12 +116,14 @@
         </div>
         <input type="file" id="fileInput" name="file" accept=".txt,.mp4,.avi,.mov,.mkv" onchange="uploadFile()">
         <p id="responseMessage"></p>
+        <div class="spinner" id="spinner"></div>
     </div>
 
     <script>
         const uploadBox = document.getElementById('uploadBox');
         const fileInput = document.getElementById('fileInput');
         const responseMessage = document.getElementById('responseMessage');
+        const spinner = document.getElementById('spinner');
 
         // Function to trigger file input click
         function triggerFileInput() {
@@ -110,6 +140,8 @@
             
             formData.append('file', fileInput.files[0]);
             responseMessage.innerText = "Uploading...";
+            spinner.style.display = 'block'; // Show spinner
+            uploadBox.classList.add('disabled'); // Disable upload box
 
             try {
                 const response = await fetch('/upload', {
@@ -121,6 +153,9 @@
                 responseMessage.innerText = message;
             } catch (error) {
                 responseMessage.innerText = "Upload failed. Please try again.";
+            } finally {
+                spinner.style.display = 'none'; // Hide spinner
+                uploadBox.classList.remove('disabled'); // Enable upload box
             }
         }
 
