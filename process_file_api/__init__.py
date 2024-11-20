@@ -116,7 +116,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
         # Validate the analysis response
         try:
-            dialog = json.loads(analysis)
+            # Assuming the analysis response is a JSON string with the "Analysis" key
+            analysis_data = json.loads(analysis)
+            dialog = analysis_data.get("Analysis", [])  # Extract the list directly
         except json.JSONDecodeError as e:
             logging.error(f"JSONDecodeError: {str(e)}. Analysis response: {analysis}")
             return func.HttpResponse("Error: Invalid JSON format returned by OpenAI.", status_code=500)
