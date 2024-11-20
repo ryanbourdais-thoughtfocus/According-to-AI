@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Upload</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: linear-gradient(135deg, #2f3b52, #00d4ff);
+            font-family: Arial, sans-serif;
+        }
+
+        .upload-container {
+            background-color: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            width: 400px;
+            text-align: center;
+        }
+
+        .upload-container h1 {
+            font-size: 20px;
+            color: #333;
+        }
+
+        .upload-box {
+            border: 2px dashed #00bfa6;
+            border-radius: 12px;
+            padding: 30px;
+            margin-top: 20px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .upload-box:hover {
+            background-color: #f0f8ff;
+        }
+
+        .upload-box img {
+            width: 50px;
+            margin-bottom: 10px;
+        }
+
+        .upload-box p {
+            font-size: 14px;
+            color: #555;
+        }
+
+        .browse-button {
+            display: inline-block;
+            background-color: #00bfa6;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 5px;
+            text-decoration: none;
+            margin-top: 20px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .browse-button:hover {
+            background-color: #009f8c;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        #responseMessage {
+            margin-top: 20px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="upload-container">
+        <h1>Upload your File here </h1>
+        <div class="upload-box" id="uploadBox" onclick="triggerFileInput()">
+            <img src="https://img.icons8.com/ios-filled/50/000000/clapperboard.png" alt="Upload Icon">
+            <p>Drag and drop Text or video file here<br>or</p>
+            <span class="browse-button" onclick="triggerFileInput()">Browse</span>
+        </div>
+        <input type="file" id="fileInput" name="file" accept=".txt,.mp4,.avi,.mov,.mkv" onchange="uploadFile()">
+        <p id="responseMessage"></p>
+    </div>
+
+    <script>
+        const uploadBox = document.getElementById('uploadBox');
+        const fileInput = document.getElementById('fileInput');
+        const responseMessage = document.getElementById('responseMessage');
+
+        // Function to trigger file input click
+        function triggerFileInput() {
+            fileInput.click();
+        }
+
+        // Function to upload file
+        async function uploadFile() {
+            const formData = new FormData();
+            if (fileInput.files.length === 0) {
+                responseMessage.innerText = "No file selected.";
+                return;
+            }
+            
+            formData.append('file', fileInput.files[0]);
+            formData.append('message' , "this is the message for you");
+            responseMessage.innerText = "Uploading...";
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const message = await response.text();
+                responseMessage.innerText = message;
+            } catch (error) {
+                responseMessage.innerText = "Upload failed. Please try again.";
+            }
+        }
+    </script>
+
+</body>
+</html>
