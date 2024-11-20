@@ -35,22 +35,22 @@ def analyze_text_with_openai(full_text):
         logging.info("Sending transcription to OpenAI for analysis...")
         client = OpenAI(api_key = openai.api_key)
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4",
             messages=[
                 {
                     "role": "user",
                     "content": (
-                                "Analyze the following meeting transcript. Identify the speakers as either 'Salesperson' or 'Client' and "
-                                "determine the sentiment of each statement. Provide the analysis in JSON format with each statement "
-                                "including 'Speaker', 'Statement', and 'Sentiment'.\n\n"
-                                f"Transcript:\n{full_text}"
-                            ),
+                        "Analyze the following meeting transcript. Identify which speaker is the 'Client' and which is the 'Salesperson' "
+                        "and determine the sentiment of each statement. Provide the analysis in JSON format with each statement "
+                        "including 'Speaker', 'Statement', and 'Sentiment'.\n\n"
+                        f"Transcript:\n{full_text}"
+                    ),
                 },
             ],
         )
-        analysis = response.choices[0].message.content.strip()
+        response_message = response.choices[0].message.content.strip()
         logging.info("OpenAI analysis completed.")
-        return analysis
+        return response_message
     except Exception as e:
         logging.error(f"Error during OpenAI analysis: {str(e)}")
         raise
@@ -86,7 +86,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         logging.info("Starting ffmpeg command...")
-        subprocess.run(ffmpeg_command, check=True, capture_output=True, text=True)
+        subprocess.run(ffmpeg_command, check=True, capture_output=True)
         logging.info("Audio track converted to WAV format.")
     except subprocess.CalledProcessError as e:
         logging.error(f"Error while converting video to audio: {e.stderr}")
@@ -107,13 +107,20 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     try:
         with ThreadPoolExecutor() as executor:
             future_transcription = executor.submit(transcribe_audio_with_whisper, model, temp_audio_path)
-            future_analysis = executor.submit(analyze_text_with_openai, future_transcription.result())
-            
-            # Wait for both tasks to complete
             full_text = future_transcription.result()
+
+            future_analysis = executor.submit(analyze_text_with_openai, full_text)
             analysis = future_analysis.result()
 
         logging.info("Transcription and analysis completed.")
+
+        # Validate the analysis response
+        try:
+            dialog = json.loads(analysis)
+        except json.JSONDecodeError as e:
+            logging.error(f"JSONDecodeError: {str(e)}. Analysis response: {analysis}")
+            return func.HttpResponse("Error: Invalid JSON format returned by OpenAI.", status_code=500)
+
     except Exception as e:
         return func.HttpResponse(f"Error during processing: {str(e)}", status_code=500)
 
@@ -125,7 +132,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             "Time": "",
             "Location": "Video Call",
             "Participants": ["Salesperson", "Client"],
-            "Dialog": json.loads(analysis),
+            "Dialog": dialog,
             "ClosingNote": "The meeting concludes. Details may need to be followed up.",
             "PerformanceSummary": {
                 "OverallPerformance": "",
