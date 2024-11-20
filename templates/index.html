@@ -109,7 +109,6 @@
             }
             
             formData.append('file', fileInput.files[0]);
-            formData.append('message' , "this is the message for you");
             responseMessage.innerText = "Uploading...";
 
             try {
@@ -124,6 +123,26 @@
                 responseMessage.innerText = "Upload failed. Please try again.";
             }
         }
+
+        // Drag and drop handlers
+        uploadBox.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            uploadBox.style.backgroundColor = '#f0f8ff'; // Optional: Change style on drag over
+        });
+
+        uploadBox.addEventListener('dragleave', () => {
+            uploadBox.style.backgroundColor = ''; // Reset style on drag leave
+        });
+
+        uploadBox.addEventListener('drop', (event) => {
+            event.preventDefault();
+            uploadBox.style.backgroundColor = ''; // Reset style on drop
+            const files = event.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                uploadFile();
+            }
+        });
     </script>
 
 </body>
