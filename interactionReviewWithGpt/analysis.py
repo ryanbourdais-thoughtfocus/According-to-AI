@@ -103,9 +103,10 @@ def rate_sales_pitch(conversation):
     prompt = f"""
     Rate the sales pitch in the conversation based on:
     - Clarity
-    - Relevance
-    - Persuasiveness
-    - Responsiveness
+    - Relevance(weather product was relevant to customer, if he doesn't show interest means give low ratings below 4)
+    - Persuasiveness(give ratings based on weather salesperson was able to create some interest in customers interest)
+    - Responsiveness(customer response towards that product, if he says not interested give low ratings)
+    - overall(take average of all the ratings while rating)
  
     Provide the ratings in JSON format, with a score out of 10 and a brief explanation for each criterion:
     {{
