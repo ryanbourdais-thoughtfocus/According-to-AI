@@ -23,8 +23,7 @@
             "args": [
                 "run"
             ],
-            "jinja": true,
-            "preLaunchTask": "pip install (ui)"
+            "jinja": true
         }
     ],
     "compounds": [
@@ -32,6 +31,5 @@
             "name": "Start UI and API",
             "configurations": ["Flask", "Attach to Python Functions"]
         }
-    ],
-    "default": "Start UI and API"
+    ]
 }
