@@ -39,18 +39,23 @@ def analyze_text_with_openai(full_text):
         logging.info("Sending transcription to OpenAI for analysis...")
         client = OpenAI(api_key = openai.api_key)
 
-                # Refined prompt with examples
+        # Refined Prompt for OpenAI API Analysis
         prompt = (
-            "Analyze the following meeting transcript. Assign each statement to either the 'Salesperson' or the 'Client' "
-            "based on the content of the statement. The salesperson typically discusses solutions, asks questions, "
-            "and drives the conversation forward, while the client describes problems, asks for clarification, "
-            "or reacts to the salesperson. Provide the analysis in JSON format with each statement including 'Speaker', "
-            "'Statement', and 'Sentiment'.\n\n"
+            "Analyze the following meeting transcript and assign each statement to either the 'Client' or the 'Salesperson' "
+            "based on the content and context of the statement. Use the following rules to determine the roles:\n\n"
+            "- If a speaker introduces themselves as a decision-maker, such as a CEO or manager, they are likely the 'Client.'\n"
+            "- The 'Salesperson' typically proposes solutions, asks about challenges, or provides details about products or services.\n"
+            "- The 'Client' often describes problems, asks for clarification, or reacts to the salesperson's statements.\n"
+            "- If there is uncertainty, prefer assigning roles based on context (e.g., the host of the meeting is likely the Client, "
+            "while the visitor is the Salesperson).\n\n"
+            "Provide the analysis in JSON format as an array, where each statement includes the fields 'Speaker' (Client or Salesperson), "
+            "'Statement' (the text of the statement), and 'Sentiment' (Positive, Neutral, or Negative). "
+            "Do not include any other text, commentary, or explanation, and do not put it in a code block—only the JSON.\n\n"
             f"Transcript:\n{full_text}"
         )
 
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "user","content": prompt},
             ],
@@ -123,9 +128,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
         # Validate the analysis response
         try:
-            # Assuming the analysis response is a JSON string with the "Analysis" key
-            analysis_data = json.loads(analysis)
-            dialog = analysis_data
+            # Check if the response is already a valid Python list
+            if isinstance(analysis, list):
+                dialog = analysis  # Use it directly
+            else:
+                # Attempt to parse the response as JSON
+                dialog = json.loads(analysis)
+
+            logging.info(f"Parsed dialog: {dialog}")
         except json.JSONDecodeError as e:
             logging.error(f"JSONDecodeError: {str(e)}. Analysis response: {analysis}")
             return func.HttpResponse("Error: Invalid JSON format returned by OpenAI.", status_code=500)
