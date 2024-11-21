@@ -61,7 +61,7 @@ def determine_recipients(json_data, score):
         return ["ryan.bourdais@thoughtfocus.com","ekesh.nagaraja@thoughtfocus.com"]
     else:
         # Average: Send to both salesperson and manager
-        return ["soorajc01@gmail.com",  "ekeshkumar48@gmail.com"]
+        return ["soorajc01@gmail.com",  "ekeshkumar48@gmail.com", "mohammad.shishakly@thoughtfocus.com"]
 # Function to send email with an optional PDF attachment using Gmail SMTP
 def send_email(recipients, subject, body, pdf_path=None):
     # Set up the MIME structure for the email
