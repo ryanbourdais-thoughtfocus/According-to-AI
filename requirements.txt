@@ -1,4 +1,15 @@
+# UI Dependencies
 Flask
 python-dotenv
 fpdf
 langchain-openai
+
+# API Dependencies
+azure-functions
+torch  # Install PyTorch with CUDA if necessary (use the correct version as per your CUDA version)
+ffmpeg-python  # Python bindings for FFmpeg
+transformers
+openai
+
+# Whisper from the official GitHub repository
+git+https://github.com/openai/whisper.git

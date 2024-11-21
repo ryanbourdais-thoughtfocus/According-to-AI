@@ -15,3 +15,5 @@ uploads/sales-meeting-01_edit.mp4
 uploads/
 __pycache__/
 conversation.json
+.venv/
+local.settings.json
