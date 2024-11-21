@@ -35,8 +35,8 @@ def chunk_conversation(conversation, chunk_size):
 
 def analyze_conversation(question, conversation_chunk):
     """Analyze a specific chunk of conversation."""
-    prompt = f"""
-    You are analyzing a customer service conversation. Below is a portion of the transcript. Please answer the question based on the conversation provided:
+    prompt = f"""    
+    You are analyzing a meeting call between office employees and clients. Below is a portion of the transcript. Please answer the question based on the conversation provided:
 
     Conversation: {conversation_chunk}
 
