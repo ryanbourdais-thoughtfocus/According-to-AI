@@ -38,18 +38,21 @@ def analyze_text_with_openai(full_text):
     try:
         logging.info("Sending transcription to OpenAI for analysis...")
         client = OpenAI(api_key = openai.api_key)
+
+                # Refined prompt with examples
+        prompt = (
+            "Analyze the following meeting transcript. Assign each statement to either the 'Salesperson' or the 'Client' "
+            "based on the content of the statement. The salesperson typically discusses solutions, asks questions, "
+            "and drives the conversation forward, while the client describes problems, asks for clarification, "
+            "or reacts to the salesperson. Provide the analysis in JSON format with each statement including 'Speaker', "
+            "'Statement', and 'Sentiment'.\n\n"
+            f"Transcript:\n{full_text}"
+        )
+
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        "Analyze the following meeting transcript. Identify which speaker is the 'Client' and which is the 'Salesperson' "
-                        "and determine the sentiment of each statement. Provide the analysis in JSON format with each statement "
-                        "including 'Speaker', 'Statement', and 'Sentiment'.\n\n"
-                        f"Transcript:\n{full_text}"
-                    ),
-                },
+                {"role": "user","content": prompt},
             ],
         )
         response_message = response.choices[0].message.content.strip()
@@ -122,7 +125,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         try:
             # Assuming the analysis response is a JSON string with the "Analysis" key
             analysis_data = json.loads(analysis)
-            dialog = analysis_data.get("Analysis", [])  # Extract the list directly
+            dialog = analysis_data
         except json.JSONDecodeError as e:
             logging.error(f"JSONDecodeError: {str(e)}. Analysis response: {analysis}")
             return func.HttpResponse("Error: Invalid JSON format returned by OpenAI.", status_code=500)
