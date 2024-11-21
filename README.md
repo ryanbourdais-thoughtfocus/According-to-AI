@@ -48,7 +48,7 @@ Before running the project, make sure you have the following installed:
 
 ## Configuration
 
-1. **Setup .evn with your OpenAI API key**
+1. **Setup .evn with your OpenAI API key in the root of the project folder**
    ```bash
    OPENAI_API_KEY=YOUR-API-KEY
    ```
