@@ -23,7 +23,8 @@
             "args": [
                 "run"
             ],
-            "jinja": true
+            "jinja": true,
+            "preLaunchTask": "pip install (ui)"
         }
     ],
     "compounds": [
