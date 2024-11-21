@@ -1,3 +1,4 @@
+import warnings
 import logging
 import os
 import azure.functions as func
@@ -10,6 +11,9 @@ import torch
 import openai
 from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor
+
+# Suppress specific FutureWarning from torch
+warnings.filterwarnings("ignore", category=FutureWarning, module="whisper")
 
 # Set your OpenAI API key
 openai.api_key = os.environ.get("OPENAI_API_KEY")
