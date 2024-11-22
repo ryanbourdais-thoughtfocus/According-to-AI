@@ -22,27 +22,46 @@ def retry_api_call(prompt, retries=3, delay=5):
     return {"error": "API call failed after retries"}
 
 
-def calculate_dynamic_chunk_size(conversation, max_tokens=300):
-    """Calculate an optimal chunk size based on the model's token limits."""
-    avg_tokens_per_entry = 50  # Approximate token size per dialog entry
+def preprocess_conversation(conversation):
+    """Preprocess conversation for better LLM analysis."""
+    normalized = []
+    for entry in conversation:
+        entry["Speaker"] = entry["Speaker"].strip().lower()
+        entry["Statement"] = entry["Statement"].strip()
+        normalized.append(entry)
+    return normalized
+
+
+def calculate_dynamic_chunk_size(conversation, max_tokens=300, avg_tokens_per_entry=40):
+    """Adjust chunk size based on average entry size and token limits."""
     return max(1, min(len(conversation), max_tokens // avg_tokens_per_entry))
 
 
-def chunk_conversation(conversation, chunk_size):
-    """Break down a conversation into manageable chunks."""
-    return [conversation[i:i + chunk_size] for i in range(0, len(conversation), chunk_size)]
+def chunk_conversation(conversation, chunk_size, overlap=2):
+    """Break down a conversation into manageable chunks with overlap."""
+    chunks = []
+    for i in range(0, len(conversation), chunk_size - overlap):
+        chunks.append(conversation[i:i + chunk_size])
+    return chunks
 
 
 def analyze_conversation(question, conversation_chunk):
-    """Analyze a specific chunk of conversation."""
-    prompt = f"""    
-    You are analyzing a meeting call between office employees and clients. Below is a portion of the transcript. Please answer the question based on the conversation provided:
+    """Analyze a specific chunk of conversation with refined prompts."""
+    prompt = f"""
+    You are an expert in business communication analysis. Below is a portion of a meeting transcript between employees and clients.
+    Please analyze the conversation and answer the question in a structured and concise manner:
 
     Conversation: {conversation_chunk}
 
     Question: {question}
 
-    Answer:"""
+    Guidelines:
+    - Provide actionable insights.
+    - Highlight key moments.
+    - Structure your response logically.
+
+    Answer:
+    """
     response = retry_api_call(prompt)
     if "error" in response:
         return response
@@ -92,7 +111,8 @@ def detailed_questions(conversation):
         "Customer Interest": "On a scale of 1 to 10, how interested was the customer in the product or service?",
         "Language Barrier": "Were there any language barriers during the call?",
         "Sales Challenges": "What challenges did the sales representative face during the call?",
-        "Customer Pain Points": "What pain points or concerns did the customer express?"
+        "Customer Pain Points": "What pain points or concerns did the customer express?",
+        "Salesperson Pitch/Sales Quality Rating": "Evaluate the salesperson's pitch quality. Was it clear, engaging, and persuasive? Provide specific strengths and areas for improvement."
     }
     responses = {}
     for section, question in sections.items():
@@ -100,43 +120,76 @@ def detailed_questions(conversation):
     return responses
 
 
-def rate_sales_pitch(conversation):
-    """Rate the sales pitch based on clarity, relevance, persuasiveness, and responsiveness."""
-    prompt = f"""
-    Rate the sales pitch in the conversation based on:
-    - Clarity
-    - Relevance
-    - Persuasiveness
-    - Responsiveness
-
-    Provide the ratings in JSON format, with a score out of 10 and a brief explanation for each criterion:
-    {{
-        "clarity": {{"score": "<score>/10", "explanation": "<explanation>"}},
-        "relevance": {{"score": "<score>/10", "explanation": "<explanation>"}},
-        "persuasiveness": {{"score": "<score>/10", "explanation": "<explanation>"}},
-        "responsiveness": {{"score": "<score>/10", "explanation": "<explanation>"}},
-        "overall": {{"score": "<score>/10", "explanation": "<explanation>"}}
-    }}
+def rate_call(detailed_analysis):
     """
-    response = retry_api_call(prompt)
-    if "error" in response:
-        return response
+    Rate the call based on clarity, relevance, persuasiveness, responsiveness, customer sentiment, and customer interest.
+    """
     try:
-        return json.loads(response.content.strip())
-    except json.JSONDecodeError as e:
-        print(f"Error decoding JSON response: {e}")
-        return {"error": "Failed to parse sales pitch rating"}
+        # Extract and validate properties
+        pitch_quality = detailed_analysis.get("Salesperson Pitch/Sales Quality Rating", "").lower()
+        customer_sentiment = detailed_analysis.get("Customer Sentiment", "").lower()
+        customer_interest_raw = detailed_analysis.get("Customer Interest", "0")
+
+        # Validate Customer Interest
+        try:
+            customer_interest = int(customer_interest_raw)
+        except ValueError:
+            print(f"Warning: Unable to parse Customer Interest '{customer_interest_raw}'. Defaulting to 0.")
+            customer_interest = 0
+
+        # Assign scores based on extracted properties
+        scores = {
+            "Clarity": 8 if "clear" in pitch_quality else 6,
+            "Relevance": 8 if "relevant" in customer_sentiment else 5,
+            "Persuasiveness": 9 if "persuasive" in pitch_quality else 6,
+            "Responsiveness": 7 if "responsive" in customer_sentiment else 5,
+            "Customer Interest": customer_interest
+        }
+
+        # Compute weighted overall score
+        overall_score = round(
+            (scores["Clarity"] * 0.25) +
+            (scores["Relevance"] * 0.2) +
+            (scores["Persuasiveness"] * 0.25) +
+            (scores["Responsiveness"] * 0.2) +
+            (scores["Customer Interest"] * 0.1)
+        )
+
+        # Generate explanation
+        explanation = (
+            f"The call scored {overall_score}/10 based on clarity, relevance, "
+            f"persuasiveness, responsiveness, and customer interest."
+        )
+
+        return {
+            "Scores": scores,
+            "Overall Score": f"{overall_score}/10",
+            "Explanation": explanation
+        }
+
+    except Exception as e:
+        print(f"Error in rating call: {e}")
+        return {"error": "Failed to rate the call"}
 
 
 def generate_analysis_report(conversation):
     """Generate a comprehensive analysis report."""
     try:
+        conversation = preprocess_conversation(conversation)
+
+        # Generate detailed questions analysis
+        detailed_analysis = detailed_questions(conversation)
+
+        # Rate the call
+        call_rating = rate_call(detailed_analysis)
+
+        # Compile full report
         return {
             "Overall Meeting Summary": overall_meeting_summary(conversation),
             "Speaker Contributions": analyze_speaker_contributions(conversation),
             "Speaker Interactions": speaker_interactions(conversation),
-            **detailed_questions(conversation),
-            "Sales Pitch Rating": rate_sales_pitch(conversation),
+            **detailed_analysis,
+            "Call Rating": call_rating
         }
     except Exception as e:
         print(f"Error generating analysis report: {e}")
