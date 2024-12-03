@@ -1,0 +1,35 @@
+{
+    "version": "0.3.0",
+    "configurations": [
+        {
+            "name": "Attach to Python Functions",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 9091
+            },
+            "preLaunchTask": "func: host start"
+        },
+        {
+            "name": "Flask",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/app.py",
+            "env": {
+                "FLASK_APP": "app.py",
+                "FLASK_ENV": "development"
+            },
+            "args": [
+                "run"
+            ],
+            "jinja": true
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Start UI and API",
+            "configurations": ["Flask", "Attach to Python Functions"]
+        }
+    ]
+}
