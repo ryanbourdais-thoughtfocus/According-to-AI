@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=100%, initial-scale=1.0">
     <title>Video Upload</title>
     <style>
         body {
@@ -10,7 +10,8 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
-            background: linear-gradient(135deg, #2f3b52, #00d4ff);
+            background: #f5f5dc;
+            background-size: cover; /* Ensures the image covers the entire background */
             font-family: Arial, sans-serif;
         }
 
@@ -21,6 +22,7 @@
             padding: 40px;
             width: 400px;
             text-align: center;
+            backdrop-filter: blur(10px);
         }
 
         .upload-container h1 {
@@ -35,6 +37,7 @@
             margin-top: 20px;
             cursor: pointer;
             transition: background-color 0.2s;
+            position: relative;
         }
 
         .upload-box:hover {
@@ -51,6 +54,12 @@
             color: #555;
         }
 
+        #fileNameDisplay {
+            font-size: 14px;
+            color: #555;
+            margin-top: 10px;
+        }
+
         .browse-button {
             display: inline-block;
             background-color: #00bfa6;
@@ -64,7 +73,7 @@
         }
 
         .browse-button:hover {
-            background-color: #009f8c;
+            background-color: #00bfa6;
         }
 
         #fileInput {
@@ -102,20 +111,47 @@
             opacity: 0.5;
             pointer-events: none;
         }
+
+        /* Success container styles */
+        .success-container {
+            display: none;
+            text-align: center;
+        }
+
+        .success-container img {
+            width: 350px;
+            margin-bottom: 20px;
+        }
+
+        .success-message {
+            font-size: 24px;
+            color:  #00bfa6;
+            font-weight: bolder;
+        }
     </style>
 </head>
 <body>
 
-    <div class="upload-container">
-        <h1>Upload your File here </h1>
-        <div class="upload-box" id="uploadBox" onclick="triggerFileInput()">
-            <img src="https://img.icons8.com/ios-filled/50/000000/clapperboard.png" alt="Upload Icon">
-            <p>Drag and drop Text or video file here<br>or</p>
-            <span class="browse-button">Browse</span>
-        </div>
-        <input type="file" id="fileInput" name="file" accept=".txt,.mp4,.avi,.mov,.mkv" onchange="uploadFile()">
-        <p id="responseMessage"></p>
-        <div class="spinner" id="spinner"></div>
+    <div class="upload-container" id="uploadContainer">
+        <h1>Upload your File here</h1>
+        <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data">
+            <input type="text" id="recipients" name="recipients" placeholder="Enter recipient emails (comma separated)" required style="width: 100%; padding: 10px; margin-bottom: 20px;">
+            <div class="upload-box" id="uploadBox" onclick="triggerFileInput()">
+                <img src="https://img.icons8.com/ios-filled/50/000000/clapperboard.png" alt="Upload Icon">
+                <p>Drag and drop Text or video file here<br>or</p>
+                <span class="browse-button">Browse</span>
+                <p id="fileNameDisplay"></p>
+            </div>
+            <input type="file" id="fileInput" name="file" accept=".txt,.mp4,.avi,.mov,.mkv" onchange="displayFileName()">
+            <p id="responseMessage"></p>
+            <div class="spinner" id="spinner"></div>
+            <button type="button" onclick="uploadAndSendEmail()" style="margin-top: 20px; padding: 10px 20px; background-color: #00bfa6; color: #fff; border: none; border-radius: 5px; cursor: pointer;">Upload and Send Email</button>
+        </form>
+    </div>
+
+    <div class="success-container" id="successContainer">
+        <img src="https://media.giphy.com/media/111ebonMs90YLu/giphy.gif" alt="Success Gif">
+        <p class="success-message">Email Sent! Hurray!</p>
     </div>
 
     <script>
@@ -123,22 +159,42 @@
         const fileInput = document.getElementById('fileInput');
         const responseMessage = document.getElementById('responseMessage');
         const spinner = document.getElementById('spinner');
+        const uploadContainer = document.getElementById('uploadContainer');
+        const successContainer = document.getElementById('successContainer');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
 
         // Function to trigger file input click
         function triggerFileInput() {
             fileInput.click();
         }
 
-        // Function to upload file
-        async function uploadFile() {
-            const formData = new FormData();
+        // Function to display selected file name
+        function displayFileName() {
+            if (fileInput.files.length > 0) {
+                fileNameDisplay.textContent = `Selected file: ${fileInput.files[0].name}`;
+            } else {
+                fileNameDisplay.textContent = "";
+            }
+        }
+
+        // Function to upload file and send email
+        async function uploadAndSendEmail() {
+            const formData = new FormData(document.getElementById('uploadForm'));
+            const recipients = document.getElementById('recipients').value;
+
             if (fileInput.files.length === 0) {
                 responseMessage.innerText = "No file selected.";
                 return;
             }
+
+            if (!recipients) {
+                responseMessage.innerText = "Please enter recipient email addresses.";
+                return;
+            }
             
             formData.append('file', fileInput.files[0]);
-            responseMessage.innerText = "Uploading...";
+            formData.append('recipients', recipients);
+            responseMessage.innerText = "Uploading and sending email...";
             spinner.style.display = 'block'; // Show spinner
             uploadBox.classList.add('disabled'); // Disable upload box
 
@@ -149,14 +205,25 @@
                 });
 
                 const message = await response.text();
-                responseMessage.innerText = message;
+                if (response.ok) {
+                    showSuccessMessage();
+                } else {
+                    responseMessage.innerText = message;
+                }
             } catch (error) {
-                responseMessage.innerText = "Upload failed. Please try again.";
+                responseMessage.innerText = "Upload and email sending failed. Please try again.";
             } finally {
                 spinner.style.display = 'none'; // Hide spinner
                 uploadBox.classList.remove('disabled'); // Enable upload box
                 fileInput.value = ''; // Clear the file input
+                fileNameDisplay.textContent = ""; // Clear the displayed file name
             }
+        }
+
+        // Function to show success message with gif
+        function showSuccessMessage() {
+            uploadContainer.style.display = 'none';
+            successContainer.style.display = 'block';
         }
 
         // Drag and drop handlers
@@ -175,7 +242,7 @@
             const files = event.dataTransfer.files;
             if (files.length > 0) {
                 fileInput.files = files;
-                uploadFile();
+                displayFileName();
             }
         });
     </script>

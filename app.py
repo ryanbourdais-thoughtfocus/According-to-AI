@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, redirect, url_for, send_file
+from flask import Flask, request, render_template, redirect, url_for, send_file,jsonify
 import os
 import MailHandling
 import pdfGen
@@ -47,8 +47,19 @@ def upload_file():
     if 'file' not in request.files:
         logging.error("No file part in the request.")
         return "No file part in the request", 400
+    
 
-    file = request.files['file']  
+    file = request.files['file'] 
+    recipients = request.form.get('recipients', '').split(',')
+
+    # Trim whitespace from recipient emails
+    recipients = [email.strip() for email in recipients if email.strip()]
+
+    if not recipients:
+        logging.error("No recipient email addresses provided.")
+        return "No recipient email addresses provided", 400
+
+
 
     if file.filename == '':
         logging.error("No selected file.")
@@ -73,6 +84,11 @@ def upload_file():
                 
                 # Get the entire response JSON
                 response_data = response.json()
+                if isinstance(response_data, list):
+                    json_data = response_data[0]  # Pick the first element if it's a list
+                else:
+                    json_data = response_data
+
 
                 # Write the response JSON to conversation.json
                 with open('conversation.json', 'w') as json_file:
@@ -96,9 +112,15 @@ def upload_file():
                 logging.info("Sending mail with PDF...")
                 printTime()
 
-                MailHandling.process_and_send_email(json_data, pdf_path=r'storedPDF/'+name)
-                logging.info(f"File uploaded and processed successfully: {file.filename}")
-                return f"File uploaded successfully: {file.filename}", 200
+                MailHandling.process_and_send_email(recipients,json_data, pdf_path=r'storedPDF/'+name)
+                #logging.info(f"File uploaded and processed successfully: {file.filename}")
+                return jsonify({
+                    "status": "success",
+                    "message": "File uploaded and email sent successfully.",
+                    "file": file.filename,
+                    "recipients": recipients
+                }), 200
+
             else:
                 logging.error("Failed to process file.")
                 return "Error processing file", 500

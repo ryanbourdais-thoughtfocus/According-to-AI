@@ -50,18 +50,7 @@ def build_email_content(json_data):
     # Construct the full email body with HTML and additional line breaks
     body = greeting + score_info + feedback + additional_details + closing_message
     return f"Customer Interaction Report - Score: {score}", body
-# Function to dynamically assign recipients based on score and sentiment
-def determine_recipients(json_data, score):
-    sentiment = json_data.get("Customer Sentiment", "").lower()
-    if score > 7 or "positive" in sentiment:
-        # Positive: Send to manager
-        return ["soorajc01@gmail.com", "ekeshkumar48@gmail.com"]
-    elif score <= 4 or "negative" in sentiment:
-        # Negative: Send to salesperson
-        return ["ryan.bourdais@thoughtfocus.com","ekesh.nagaraja@thoughtfocus.com"]
-    else:
-        # Average: Send to both salesperson and manager
-        return ["soorajc01@gmail.com",  "ekeshkumar48@gmail.com", "mohammad.shishakly@thoughtfocus.com"]
+
 # Function to send email with an optional PDF attachment using Gmail SMTP
 def send_email(recipients, subject, body, pdf_path=None):
     # Set up the MIME structure for the email
@@ -87,23 +76,19 @@ def send_email(recipients, subject, body, pdf_path=None):
         with smtplib.SMTP(smtp_server, port) as server:
             server.starttls()  # Secure the connection
             server.login(sender_email, password)  # Log in to the server
-            print("login successfull")
+            print("login successful")
             server.sendmail(sender_email, recipients, message.as_string())  # Send the email
         print("Email sent successfully!")
     except Exception as e:
         print(f"Error: {e}")
 
 # Main function to handle the JSON and trigger the email
-def process_and_send_email(json_data, pdf_path=None):
-    
+def process_and_send_email( recipients,json_data,pdf_path=None):
     score = float(json_data.get("Sales Pitch Rating", {}).get("overall", {}).get("score", "0").split("/")[0])
     # Build the email content from JSON data
     
-    # List of recipients - can also come from JSON if needed
-    recipients = determine_recipients(json_data, score)
+    # List of recipients passed directly from app.py
     subject, body = build_email_content(json_data)
     
     # Send email with optional PDF attachment
     send_email(recipients, subject, body, pdf_path)
-
-

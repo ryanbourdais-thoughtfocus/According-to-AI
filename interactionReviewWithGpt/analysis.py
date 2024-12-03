@@ -4,9 +4,11 @@ import time
 import os
 import dotenv
 
-dotenv.load_dotenv() 
+dotenv.load_dotenv()
+
 # Initialize the ChatOpenAI model
 llm = ChatOpenAI(api_key=os.getenv("OPENAI_API_KEY"), model_name="gpt-3.5-turbo", max_tokens=300, request_timeout=30)
+
 
 def retry_api_call(prompt, retries=3, delay=5):
     """Retry wrapper for API calls to handle timeouts and failures."""
@@ -18,35 +20,35 @@ def retry_api_call(prompt, retries=3, delay=5):
             print(f"API call failed on attempt {attempt + 1}: {e}")
             time.sleep(delay)
     return {"error": "API call failed after retries"}
- 
- 
+
+
 def calculate_dynamic_chunk_size(conversation, max_tokens=300):
     """Calculate an optimal chunk size based on the model's token limits."""
     avg_tokens_per_entry = 50  # Approximate token size per dialog entry
     return max(1, min(len(conversation), max_tokens // avg_tokens_per_entry))
- 
- 
+
+
 def chunk_conversation(conversation, chunk_size):
     """Break down a conversation into manageable chunks."""
     return [conversation[i:i + chunk_size] for i in range(0, len(conversation), chunk_size)]
- 
- 
+
+
 def analyze_conversation(question, conversation_chunk):
     """Analyze a specific chunk of conversation."""
-    prompt = f"""
-    You are analyzing a customer service conversation. Below is a portion of the transcript. Please answer the question based on the conversation provided:
- 
+    prompt = f"""    
+    You are analyzing a meeting call between office employees and clients. Below is a portion of the transcript. Please answer the question based on the conversation provided:
+
     Conversation: {conversation_chunk}
- 
+
     Question: {question}
- 
+
     Answer:"""
     response = retry_api_call(prompt)
     if "error" in response:
         return response
     return response.content.strip()
- 
- 
+
+
 def overall_meeting_summary(conversation):
     """Generate a high-level summary of the meeting."""
     chunk_size = calculate_dynamic_chunk_size(conversation)
@@ -56,8 +58,8 @@ def overall_meeting_summary(conversation):
         for chunk in chunks
     ]
     return " ".join(summaries)
- 
- 
+
+
 def analyze_speaker_contributions(conversation):
     """Analyze contributions by each speaker."""
     speakers = {entry["Speaker"] for entry in conversation}
@@ -66,13 +68,13 @@ def analyze_speaker_contributions(conversation):
         speaker_statements = [entry["Statement"] for entry in conversation if entry["Speaker"] == speaker]
         contributions[speaker] = analyze_conversation(f"Analyze the contributions made by {speaker}.", speaker_statements)
     return contributions
- 
- 
+
+
 def speaker_interactions(conversation):
     """Analyze interactions between speakers."""
     return analyze_conversation("Describe interactions between participants (e.g., agreements, disagreements, responses).", conversation)
- 
- 
+
+
 def detailed_questions(conversation):
     """Ask detailed questions and return answers."""
     sections = {
@@ -96,18 +98,17 @@ def detailed_questions(conversation):
     for section, question in sections.items():
         responses[section] = analyze_conversation(question, conversation)
     return responses
- 
- 
+
+
 def rate_sales_pitch(conversation):
     """Rate the sales pitch based on clarity, relevance, persuasiveness, and responsiveness."""
     prompt = f"""
     Rate the sales pitch in the conversation based on:
     - Clarity
-    - Relevance(weather product was relevant to customer, if he doesn't show interest means give low ratings below 4)
-    - Persuasiveness(give ratings based on weather salesperson was able to create some interest in customers interest)
-    - Responsiveness(customer response towards that product, if he says not interested give low ratings)
-    - overall(take average of all the ratings while rating)
- 
+    - Relevance
+    - Persuasiveness
+    - Responsiveness
+
     Provide the ratings in JSON format, with a score out of 10 and a brief explanation for each criterion:
     {{
         "clarity": {{"score": "<score>/10", "explanation": "<explanation>"}},
@@ -125,8 +126,8 @@ def rate_sales_pitch(conversation):
     except json.JSONDecodeError as e:
         print(f"Error decoding JSON response: {e}")
         return {"error": "Failed to parse sales pitch rating"}
- 
- 
+
+
 def generate_analysis_report(conversation):
     """Generate a comprehensive analysis report."""
     try:
