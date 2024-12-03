@@ -106,6 +106,24 @@
             100% { transform: rotate(360deg); }
         }
 
+        /* Progress bar styles */
+        .progress-bar {
+            display: none;
+            width: 100%;
+            background-color: #f3f3f3;
+            margin-top: 20px;
+        }
+
+        .progress-bar-fill {
+            width: 0;
+            height: 20px;
+            background-color: #00bfa6;
+            text-align: center;
+            line-height: 20px;
+            color: white;
+            transition: width 0.2s;
+        }
+
         /* Disabled form styles */
         .disabled {
             opacity: 0.5;
@@ -128,6 +146,12 @@
             color:  #00bfa6;
             font-weight: bolder;
         }
+
+        .redirect-message {
+            font-size: 18px;
+            color: #333;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
@@ -145,6 +169,9 @@
             <input type="file" id="fileInput" name="file" accept=".txt,.mp4,.avi,.mov,.mkv" onchange="displayFileName()">
             <p id="responseMessage"></p>
             <div class="spinner" id="spinner"></div>
+            <div class="progress-bar" id="progressBar">
+                <div class="progress-bar-fill" id="progressBarFill">0%</div>
+            </div>
             <button type="button" onclick="uploadAndSendEmail()" style="margin-top: 20px; padding: 10px 20px; background-color: #00bfa6; color: #fff; border: none; border-radius: 5px; cursor: pointer;">Upload and Send Email</button>
         </form>
     </div>
@@ -152,100 +179,124 @@
     <div class="success-container" id="successContainer">
         <img src="https://media.giphy.com/media/111ebonMs90YLu/giphy.gif" alt="Success Gif">
         <p class="success-message">Email Sent! Hurray!</p>
+        <p class="redirect-message" id="redirectMessage">Redirecting to the home page in 15 seconds...</p>
     </div>
 
-    <script>
-        const uploadBox = document.getElementById('uploadBox');
-        const fileInput = document.getElementById('fileInput');
-        const responseMessage = document.getElementById('responseMessage');
-        const spinner = document.getElementById('spinner');
-        const uploadContainer = document.getElementById('uploadContainer');
-        const successContainer = document.getElementById('successContainer');
-        const fileNameDisplay = document.getElementById('fileNameDisplay');
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.4.1/socket.io.js"></script>
+<script>
+    const socket = io.connect('http://127.0.0.1:5000');
 
-        // Function to trigger file input click
-        function triggerFileInput() {
-            fileInput.click();
+    const uploadBox = document.getElementById('uploadBox');
+    const fileInput = document.getElementById('fileInput');
+    const responseMessage = document.getElementById('responseMessage');
+    const spinner = document.getElementById('spinner');
+    const uploadContainer = document.getElementById('uploadContainer');
+    const successContainer = document.getElementById('successContainer');
+    const fileNameDisplay = document.getElementById('fileNameDisplay');
+    const redirectMessage = document.getElementById('redirectMessage');
+    const progressBar = document.getElementById('progressBar');
+    const progressBarFill = document.getElementById('progressBarFill');
+
+    // Function to trigger file input click
+    function triggerFileInput() {
+        fileInput.click();
+    }
+
+    // Function to display selected file name
+    function displayFileName() {
+        if (fileInput.files.length > 0) {
+            fileNameDisplay.textContent = `Selected file: ${fileInput.files[0].name}`;
+        } else {
+            fileNameDisplay.textContent = "";
+        }
+    }
+
+    // Function to upload file and send email
+    async function uploadAndSendEmail() {
+        const formData = new FormData(document.getElementById('uploadForm'));
+        const recipients = document.getElementById('recipients').value;
+
+        if (fileInput.files.length === 0) {
+            responseMessage.innerText = "No file selected.";
+            return;
         }
 
-        // Function to display selected file name
-        function displayFileName() {
-            if (fileInput.files.length > 0) {
-                fileNameDisplay.textContent = `Selected file: ${fileInput.files[0].name}`;
+        if (!recipients) {
+            responseMessage.innerText = "Please enter recipient email addresses.";
+            return;
+        }
+        
+        formData.append('file', fileInput.files[0]);
+        formData.append('recipients', recipients);
+        responseMessage.innerText = "Uploading and sending email...";
+        spinner.style.display = 'block'; // Show spinner
+        progressBar.style.display = 'block'; // Show progress bar
+        uploadBox.classList.add('disabled'); // Disable upload box
+
+        try {
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData,
+            });
+
+            const message = await response.text();
+            if (response.ok) {
+                showSuccessMessage();
             } else {
-                fileNameDisplay.textContent = "";
+                responseMessage.innerText = message;
             }
+        } catch (error) {
+            responseMessage.innerText = "Upload and email sending failed. Please try again.";
+        } finally {
+            spinner.style.display = 'none'; // Hide spinner
+            uploadBox.classList.remove('disabled'); // Enable upload box
+            fileInput.value = ''; // Clear the file input
+            fileNameDisplay.textContent = ""; // Clear the displayed file name
         }
+    }
 
-        // Function to upload file and send email
-        async function uploadAndSendEmail() {
-            const formData = new FormData(document.getElementById('uploadForm'));
-            const recipients = document.getElementById('recipients').value;
-
-            if (fileInput.files.length === 0) {
-                responseMessage.innerText = "No file selected.";
-                return;
+    // Function to show success message with gif and redirect
+    function showSuccessMessage() {
+        uploadContainer.style.display = 'none';
+        successContainer.style.display = 'block';
+        let countdown = 15;
+        const interval = setInterval(() => {
+            redirectMessage.innerText = `Redirecting to the home page in ${countdown} seconds...`;
+            countdown--;
+            if (countdown < 0) {
+                clearInterval(interval);
+                window.location.href = "/";
             }
+        }, 1000);
+    }
 
-            if (!recipients) {
-                responseMessage.innerText = "Please enter recipient email addresses.";
-                return;
-            }
-            
-            formData.append('file', fileInput.files[0]);
-            formData.append('recipients', recipients);
-            responseMessage.innerText = "Uploading and sending email...";
-            spinner.style.display = 'block'; // Show spinner
-            uploadBox.classList.add('disabled'); // Disable upload box
+    // Listening for upload progress updates
+    socket.on('upload_progress', function (data) {
+        const progress = data.progress;
+        progressBarFill.style.width = progress + '%';
+        progressBarFill.textContent = progress + '%';
+    });
 
-            try {
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
+    // Drag and drop handlers
+    uploadBox.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        uploadBox.style.backgroundColor = '#f0f8ff'; // Optional: Change style on drag over
+    });
 
-                const message = await response.text();
-                if (response.ok) {
-                    showSuccessMessage();
-                } else {
-                    responseMessage.innerText = message;
-                }
-            } catch (error) {
-                responseMessage.innerText = "Upload and email sending failed. Please try again.";
-            } finally {
-                spinner.style.display = 'none'; // Hide spinner
-                uploadBox.classList.remove('disabled'); // Enable upload box
-                fileInput.value = ''; // Clear the file input
-                fileNameDisplay.textContent = ""; // Clear the displayed file name
-            }
+    uploadBox.addEventListener('dragleave', () => {
+        uploadBox.style.backgroundColor = ''; // Reset style on drag leave
+    });
+
+    uploadBox.addEventListener('drop', (event) => {
+        event.preventDefault();
+        uploadBox.style.backgroundColor = ''; // Reset style on drop
+        const files = event.dataTransfer.files;
+        if (files.length > 0) {
+            fileInput.files = files;
+            displayFileName();
         }
-
-        // Function to show success message with gif
-        function showSuccessMessage() {
-            uploadContainer.style.display = 'none';
-            successContainer.style.display = 'block';
-        }
-
-        // Drag and drop handlers
-        uploadBox.addEventListener('dragover', (event) => {
-            event.preventDefault();
-            uploadBox.style.backgroundColor = '#f0f8ff'; // Optional: Change style on drag over
-        });
-
-        uploadBox.addEventListener('dragleave', () => {
-            uploadBox.style.backgroundColor = ''; // Reset style on drag leave
-        });
-
-        uploadBox.addEventListener('drop', (event) => {
-            event.preventDefault();
-            uploadBox.style.backgroundColor = ''; // Reset style on drop
-            const files = event.dataTransfer.files;
-            if (files.length > 0) {
-                fileInput.files = files;
-                displayFileName();
-            }
-        });
-    </script>
+    });
+</script>
 
 </body>
 </html>

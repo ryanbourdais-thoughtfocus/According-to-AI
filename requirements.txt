@@ -3,6 +3,7 @@ Flask
 python-dotenv
 fpdf
 langchain-openai
+flask-socketio
 
 # API Dependencies
 azure-functions
