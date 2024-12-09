@@ -1,0 +1,8 @@
+# Ignore system directories
+$RECYCLE.BIN/
+System Volume Information/
+
+# Ignore all hidden system files
+.DS_Store
+Thumbs.db
+# Logs
