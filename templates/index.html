@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=100%, initial-scale=1.0">
+    <title>Video Upload</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #f5f5dc;
+            background-size: cover; /* Ensures the image covers the entire background */
+            font-family: Arial, sans-serif;
+        }
+
+        .upload-container {
+            background-color: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            width: 400px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .upload-container h1 {
+            font-size: 20px;
+            color: #333;
+        }
+
+        .upload-box {
+            border: 2px dashed #00bfa6;
+            border-radius: 12px;
+            padding: 30px;
+            margin-top: 20px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            position: relative;
+        }
+
+        .upload-box:hover {
+            background-color: #f0f8ff;
+        }
+
+        .upload-box img {
+            width: 50px;
+            margin-bottom: 10px;
+        }
+
+        .upload-box p {
+            font-size: 14px;
+            color: #555;
+        }
+
+        #fileNameDisplay {
+            font-size: 14px;
+            color: #555;
+            margin-top: 10px;
+        }
+
+        .browse-button {
+            display: inline-block;
+            background-color: #00bfa6;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 5px;
+            text-decoration: none;
+            margin-top: 20px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .browse-button:hover {
+            background-color: #00bfa6;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        #responseMessage {
+            margin-top: 20px;
+            color: #333;
+        }
+
+        /* Progress bar styles */
+        .progress-bar {
+            display: none;
+            width: 100%;
+            background-color: #f3f3f3;
+            margin-top: 20px;
+        }
+
+        .progress-bar-fill {
+            width: 0;
+            height: 20px;
+            background-color: #00bfa6;
+            text-align: center;
+            line-height: 20px;
+            color: white;
+            transition: width 0.2s;
+        }
+
+        /* Disabled form styles */
+        .disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        /* Success container styles */
+        .success-container {
+            display: none;
+            text-align: center;
+        }
+
+        .success-container img {
+            width: 350px;
+            margin-bottom: 20px;
+        }
+
+        .success-message {
+            font-size: 24px;
+            color:  #00bfa6;
+            font-weight: bolder;
+        }
+
+        .redirect-message {
+            font-size: 18px;
+            color: #333;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="upload-container" id="uploadContainer">
+        <h1>Upload your File here</h1>
+        <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data">
+            <input type="text" id="recipients" name="recipients" placeholder="Enter recipient emails (comma separated)" required style="width: 100%; padding: 10px; margin-bottom: 20px;">
+            <div class="upload-box" id="uploadBox" onclick="triggerFileInput()">
+                <img src="https://img.icons8.com/ios-filled/50/000000/clapperboard.png" alt="Upload Icon">
+                <p>Drag and drop Text or video file here<br>or</p>
+                <span class="browse-button">Browse</span>
+                <p id="fileNameDisplay"></p>
+            </div>
+            <input type="file" id="fileInput" name="file" accept=".txt,.mp4,.avi,.mov,.mkv" onchange="displayFileName()">
+            <p id="responseMessage"></p>
+            <div class="progress-bar" id="progressBar">
+                <div class="progress-bar-fill" id="progressBarFill">0%</div>
+            </div>
+            <button type="button" onclick="uploadAndSendEmail()" style="margin-top: 20px; padding: 10px 20px; background-color: #00bfa6; color: #fff; border: none; border-radius: 5px; cursor: pointer;">Upload and Send Email</button>
+        </form>
+    </div>
+
+    <div class="success-container" id="successContainer">
+        <img src="https://media.giphy.com/media/111ebonMs90YLu/giphy.gif" alt="Success Gif">
+        <p class="success-message">Email Sent! Hurray!</p>
+        <p class="redirect-message" id="redirectMessage">Redirecting to the home page in 15 seconds...</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.4.1/socket.io.js"></script>
+    <script>
+        const socket = io.connect('http://127.0.0.1:5000');
+
+        const uploadBox = document.getElementById('uploadBox');
+        const fileInput = document.getElementById('fileInput');
+        const responseMessage = document.getElementById('responseMessage');
+        const uploadContainer = document.getElementById('uploadContainer');
+        const successContainer = document.getElementById('successContainer');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const redirectMessage = document.getElementById('redirectMessage');
+        const progressBar = document.getElementById('progressBar');
+        const progressBarFill = document.getElementById('progressBarFill');
+
+        // Function to trigger file input click
+        function triggerFileInput() {
+            fileInput.click();
+        }
+
+        // Function to display selected file name
+        function displayFileName() {
+            if (fileInput.files.length > 0) {
+                fileNameDisplay.textContent = `Selected file: ${fileInput.files[0].name}`;
+            } else {
+                fileNameDisplay.textContent = "";
+            }
+        }
+
+        // Function to upload file and send email
+        async function uploadAndSendEmail() {
+            const formData = new FormData(document.getElementById('uploadForm'));
+            const recipients = document.getElementById('recipients').value;
+
+            if (fileInput.files.length === 0) {
+                responseMessage.innerText = "No file selected.";
+                return;
+            }
+
+            if (!recipients) {
+                responseMessage.innerText = "Please enter recipient email addresses.";
+                return;
+            }
+            
+            formData.append('file', fileInput.files[0]);
+            formData.append('recipients', recipients);
+            responseMessage.innerText = "Uploading and sending email...";
+            progressBar.style.display = 'block'; // Show progress bar
+            uploadBox.classList.add('disabled'); // Disable upload box
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const message = await response.text();
+                if (response.ok) {
+                    showSuccessMessage();
+                } else {
+                    responseMessage.innerText = message;
+                }
+            } catch (error) {
+                responseMessage.innerText = "Upload and email sending failed. Please try again.";
+            } finally {
+                progressBar.style.display = 'none'; // Hide progress bar
+                uploadBox.classList.remove('disabled'); // Enable upload box
+                fileInput.value = ''; // Clear the file input
+                fileNameDisplay.textContent = ""; // Clear the displayed file name
+            }
+        }
+
+        // Function to show success message with gif and redirect
+        function showSuccessMessage() {
+            uploadContainer.style.display = 'none';
+            successContainer.style.display = 'block';
+            let countdown = 15;
+            const interval = setInterval(() => {
+                redirectMessage.innerText = `Redirecting to the home page in ${countdown} seconds...`;
+                countdown--;
+                if (countdown < 0) {
+                    clearInterval(interval);
+                    window.location.href = "/";
+                }
+            }, 1000);
+        }
+
+        // Listening for upload progress updates
+        socket.on('upload_progress', function (data) {
+            const progress = data.progress;
+            progressBarFill.style.width = progress + '%';
+            progressBarFill.textContent = progress + '%';
+        });
+
+        // Drag and drop handlers
+        uploadBox.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            uploadBox.style.backgroundColor = '#f0f8ff'; // Optional: Change style on drag over
+        });
+
+        uploadBox.addEventListener('dragleave', () => {
+            uploadBox.style.backgroundColor = ''; // Reset style on drag leave
+        });
+
+        uploadBox.addEventListener('drop', (event) => {
+            event.preventDefault();
+            uploadBox.style.backgroundColor = ''; // Reset style on drop
+            const files = event.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                displayFileName();
+            }
+        });
+    </script>
+
+</body>
+</html>
