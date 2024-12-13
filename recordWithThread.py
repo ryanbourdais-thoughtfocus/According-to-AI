@@ -1,0 +1,178 @@
+import os
+import threading
+import sounddevice as sd
+import wave
+import numpy as np
+from selenium import webdriver
+from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.firefox import GeckoDriverManager
+from selenium.webdriver.common.keys import Keys
+import time
+import queue
+
+class GoogleMeetBot:
+    def __init__(self, email, password):
+        self.email = email
+        self.password = password
+        self.recording = False
+        self.join_status_queue = queue.Queue()
+        self.exit_event = threading.Event()
+        self.driver = None
+        self.audio_thread = None
+        self.meeting_thread = None
+        self.setup_driver()
+
+    def __del__(self):
+        self.exit_meeting()
+
+    def setup_driver(self):
+        firefox_options = Options()
+        firefox_options.add_argument("--headless")
+        firefox_options.add_argument("--start-maximized")
+        firefox_options.add_argument("--mute-audio")
+        firefox_options.set_preference("permissions.default.microphone", 1)
+        firefox_options.set_preference("permissions.default.camera", 2)
+
+        driver_path = GeckoDriverManager().install()
+        self.driver = webdriver.Firefox(
+            service=Service(driver_path),
+            options=firefox_options,
+        )
+
+    def record_audio(self, output_file="meeting_audio.wav"):
+        """Record system audio using sounddevice."""
+        self.recording = True
+        samplerate = 44100  # Hz
+        channels = 2
+        audio_frames = []  # Renamed to avoid conflict
+
+        def audio_callback(indata, frames, time, status):
+            if status:
+                print(status)
+            if self.recording:
+                audio_frames.append(indata.copy())  # Append to local list
+
+        print("Recording system audio...")
+        with sd.InputStream(samplerate=samplerate, channels=channels, dtype='float32', callback=audio_callback):
+            while self.recording and not self.exit_event.is_set():
+                sd.sleep(100)
+
+        print("Stopping audio recording...")
+        frames_np = np.concatenate(audio_frames, axis=0)
+        frames_int16 = (frames_np * 32767).astype(np.int16)
+
+        # Ensure the recordings directory exists
+        os.makedirs("./Recordings", exist_ok=True)
+        file_path = f"./Recordings/{self.email}.wav"
+
+        # Save to WAV
+        with wave.open(file_path, 'wb') as wf:
+            wf.setnchannels(channels)
+            wf.setsampwidth(2)  # 2 bytes per sample
+            wf.setframerate(samplerate)
+            wf.writeframes(frames_int16.tobytes())
+        print(f"Audio saved to {file_path}")
+
+
+
+    def login_google_account(self):
+        self.driver.get("https://accounts.google.com/signin")
+
+        try:
+            email_field = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.ID, "identifierId"))
+            )
+            email_field.send_keys(self.email)
+            email_field.send_keys(Keys.RETURN)
+            time.sleep(5)
+
+            password_field = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.NAME, "Passwd"))
+            )
+            
+            password_field.send_keys(self.password)
+            password_field.send_keys(Keys.RETURN)
+
+            WebDriverWait(self.driver, 10).until(
+                EC.url_contains("myaccount.google.com")
+            )
+            print("Login successful!")
+
+        except Exception as e:
+            print(f"Login failed: {e}")
+            self.driver.quit()
+
+    def exit_meeting(self):
+        try:
+            self.exit_event.set()
+            self.recording = False
+
+            if self.audio_thread and self.audio_thread.is_alive():
+                self.audio_thread.join(timeout=5)
+
+            try:
+                leave_button = WebDriverWait(self.driver, 20).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[@aria-label='Leave call']"))
+                )
+                leave_button.click()
+                print("Left the meeting successfully!")
+            except Exception as leave_e:
+                print(f"Could not find leave button: {leave_e}")
+
+            self.logout()
+            print("Meeting exit process completed.")
+        except Exception as e:
+            print(f"Error during meeting exit: {e}")
+        finally:
+            if self.driver:
+                self.driver.quit()
+
+    def join_meeting(self, meeting_link):
+        try:
+            self.login_google_account()
+            self.driver.get(meeting_link)
+
+            print("Waiting for the meeting page to load...")
+            time.sleep(10)
+
+            join_button = WebDriverWait(self.driver, 30).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "[jsname='Qx7uuf']"))
+            )
+            join_button.click()
+            print("Joined the meeting successfully!")
+
+            self.join_status_queue.put("Bot joined successfully")
+
+            self.audio_thread = threading.Thread(target=self.record_audio, args=("meeting_audio.wav",))
+            self.audio_thread.start()
+
+            print("Bot is now in the meeting.")
+
+            while not self.exit_event.is_set():
+                time.sleep(1)
+
+        except Exception as e:
+            print(f"Failed to join the meeting: {e}")
+            self.join_status_queue.put(f"Failed to join the meeting: {e}")
+            self.recording = False
+            if self.driver:
+                self.driver.quit()
+
+    def logout(self):
+        try:
+            self.driver.get("https://accounts.google.com/Logout")
+            print("Logged out successfully!")
+        except Exception as e:
+            print(f"Logout failed: {e}")
+
+    def run_bot(self, meeting_link):
+        self.meeting_thread = threading.Thread(target=self.join_meeting, args=(meeting_link,))
+        self.meeting_thread.start()
+
+        join_status = self.join_status_queue.get()
+        return join_status
+
