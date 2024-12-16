@@ -1,4 +1,4 @@
-# Detecting and labelling multipple users from audio.
+# Detecting and labelling multiple users from audio.
 
 This project makes use of Pyannote.audio and OpenAI API to analysis call recording to provide speaker diarization, speaker labelling and transcript JSON generation.
 ## Table of Content
