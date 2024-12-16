@@ -28,7 +28,7 @@ Before running the project, make sure you have the following installed:
 
 2. **Set Up a Python Virtual Environment**:
    ```bash
-   python -m venv .venv
+   python3.12 -m venv .venv
    ```
 
 3. **Activate the Virtual Environment**:
