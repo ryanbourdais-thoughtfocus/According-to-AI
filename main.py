@@ -53,8 +53,8 @@ def process_file(input_file, pipeline, title, participants, location="Video Call
         graph_path = os.path.join(GRAPH_FOLDER, f"{base_name}.png")
         plot_diarization(refined_diarization, title=f"Speaker Diarization - {base_name}", output_path=graph_path)
 
-        # transcript_path = os.path.join(TRANSCRIPT_FOLDER, f"{base_name}.json")
-        # process_transcript(base_name, refined_diarization, processed_file, title, participants, transcript_path, location)
+        transcript_path = os.path.join(TRANSCRIPT_FOLDER, f"{base_name}.json")
+        process_transcript(base_name, refined_diarization, processed_file, title, participants, transcript_path, location)
 
         print(f"Finished processing {processed_file}. Graph saved to {graph_path}, transcript saved to transcript_path, RTTM saved to {RTTM_FOLDER}.\n")
 
