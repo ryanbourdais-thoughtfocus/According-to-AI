@@ -1,7 +1,7 @@
 import os
 import dotenv
 from identify_speakers import initialize_pipeline, preprocess_audio, refine_diarization, plot_diarization
-#from transcript import process_transcript
+from transcript import process_transcript
 from pyannote.core import Annotation
 
 dotenv.load_dotenv()
