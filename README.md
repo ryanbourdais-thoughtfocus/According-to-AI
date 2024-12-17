@@ -14,7 +14,7 @@ This project makes use of Pyannote.audio and OpenAI API to analysis call recordi
 
 Before running the project, make sure you have the following installed:
 
-1. **Python 3.12.x**: Python 3.12.x must be installed on your machine. You can download it from [python.org](https://www.python.org/downloads/).
+1. **Python 3.12.x**: Python 3.12.x must be installed on your machine. You can download it from [python.org](https://www.python.org/downloads/) or [Microsoft Store](https://apps.microsoft.com/detail/9NCVDN91XZQP?hl=en-us&gl=US&ocid=pdpshare).
 
 2. OpenAI API Key from [OpenAI](https://platform.openai.com/signup/)
 
